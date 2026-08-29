@@ -107,6 +107,8 @@ type PlacedOrder = {
   deliveryMode: "self" | "partner";
   partner?: DeliveryPartner;
   rider?: Rider;
+  paymentMethod: "cod" | "card" | "upi";
+  paymentStatus: "pending" | "paid";
   placedAt: Date;
 };
 
@@ -196,6 +198,8 @@ export interface DirectOrderSuccess {
   rawPrice: number;
   discountAmount: number;
   totalAmount: number;
+  paymentMethod: "cod" | "card" | "upi";
+  paymentStatus: "pending" | "paid";
 }
 
 export interface AssignedRiderInfo {
@@ -298,9 +302,22 @@ export default function MarketplacePage() {
   const [selectedPartner, setSelectedPartner] = useState("agri_express");
   const [selectedRider, setSelectedRider] = useState("rider_aman");
   const [showCheckoutWizard, setShowCheckoutWizard] = useState(false);
-  const [checkoutStep, setCheckoutStep] = useState<1 | 2 | 3>(1);
+  const [checkoutStep, setCheckoutStep] = useState<1 | 2 | 3 | 4>(1);
   const [addressError, setAddressError] = useState("");
   const [placedOrder, setPlacedOrder] = useState<PlacedOrder | null>(null);
+
+  // Payment State
+  const [paymentMethod, setPaymentMethod] = useState<"cod" | "card" | "upi">("upi");
+  const [cardDetails, setCardDetails] = useState({
+    name: "Ramesh Kumar",
+    number: "4532 8912 3456 7890",
+    expiry: "08/28",
+    cvv: "892",
+  });
+  const [upiId, setUpiId] = useState("ramesh.kumar@okaxis");
+  const [selectedUpiApp, setSelectedUpiApp] = useState("GPay");
+  const [showQrCode, setShowQrCode] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
 
   // Selected Listing for Detail Modal / Seller Comparison
   const [selectedListing, setSelectedListing] =
@@ -595,6 +612,8 @@ export default function MarketplacePage() {
   const handleConfirmOrder = async () => {
     if (!orderingItem || !activeSellerForPurchase) return;
     setIsOrdering(true);
+    const codFee = paymentMethod === "cod" ? 20 : 0;
+    const finalAmountWithPayment = finalPayable + codFee;
     setTimeout(() => {
       setOrderSuccess({
         orderId: "AGRI-" + Math.floor(100000 + Math.random() * 900000),
@@ -604,7 +623,9 @@ export default function MarketplacePage() {
         mode: purchaseMode,
         rawPrice,
         discountAmount,
-        totalAmount: finalPayable,
+        totalAmount: finalAmountWithPayment,
+        paymentMethod,
+        paymentStatus: paymentMethod === "cod" ? "pending" : "paid",
       });
       setIsOrdering(false);
     }, 650);
@@ -636,6 +657,7 @@ export default function MarketplacePage() {
     setIsCartOpen(false);
     setCheckoutStep(1);
     setAddressError("");
+    setPaymentError("");
     if (currentUser?.buyerProfile?.deliveryAddress) {
       setDeliveryAddress(currentUser.buyerProfile.deliveryAddress);
     }
@@ -659,20 +681,40 @@ export default function MarketplacePage() {
     setCheckoutStep(2);
   };
 
+  const continueFromPayment = () => {
+    if (paymentMethod === "card") {
+      if (!cardDetails.number.trim() || !cardDetails.cvv.trim()) {
+        setPaymentError("Please complete all required card fields.");
+        return;
+      }
+    } else if (paymentMethod === "upi" && !showQrCode) {
+      if (!upiId.trim()) {
+        setPaymentError("Please enter a valid UPI VPA handle or scan QR code.");
+        return;
+      }
+    }
+    setPaymentError("");
+    setCheckoutStep(4);
+  };
+
   // Finalise Cart Checkout
   const handleProceedCartCheckout = () => {
     if (cart.length === 0) return;
     setIsCheckingOutCart(true);
+    const codFee = paymentMethod === "cod" ? 20 : 0;
+    const totalOrderAmount = cartTotalPrice + deliveryFee + codFee;
     setTimeout(() => {
       setPlacedOrder({
         orderId: "AMZ-AGRI-" + Math.floor(100000 + Math.random() * 900000),
         items: [...cart],
-        totalPrice: cartTotalPrice + deliveryFee,
+        totalPrice: totalOrderAmount,
         totalKg: cartTotalItems,
         address: deliveryAddress,
         deliveryMode,
         partner: deliveryMode === "partner" ? chosenPartner : undefined,
         rider: deliveryMode === "partner" ? chosenRider : undefined,
+        paymentMethod,
+        paymentStatus: paymentMethod === "cod" ? "pending" : "paid",
         placedAt: new Date(),
       });
       setCart([]);
@@ -1523,7 +1565,7 @@ export default function MarketplacePage() {
             {/* Step Indicators */}
             <div className="px-5 pt-5">
               <div className="flex items-center gap-2">
-                {["Address", "Delivery", "Review"].map((label, index) => (
+                {["Address", "Delivery", "Payment", "Review"].map((label, index) => (
                   <div key={label} className="flex flex-1 items-center gap-2">
                     <span
                       className={`grid size-7 place-items-center rounded-full text-xs font-black transition ${checkoutStep >= index + 1 ? "bg-emerald-700 dark:bg-emerald-600 text-white" : "bg-stone-200 dark:bg-zinc-800 text-stone-500 dark:text-zinc-400"}`}
@@ -1537,7 +1579,7 @@ export default function MarketplacePage() {
                     <span className="hidden text-xs font-bold text-emerald-900 dark:text-zinc-200 sm:inline">
                       {label}
                     </span>
-                    {index < 2 && (
+                    {index < 3 && (
                       <span className="h-px flex-1 bg-stone-200 dark:bg-zinc-800" />
                     )}
                   </div>
@@ -1605,7 +1647,7 @@ export default function MarketplacePage() {
                   <div className="flex justify-end pt-2">
                     <Button
                       onClick={continueFromAddress}
-                      className="bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold"
+                      className="bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold cursor-pointer"
                     >
                       Continue <ChevronRight className="size-4" />
                     </Button>
@@ -1712,22 +1754,251 @@ export default function MarketplacePage() {
                     <Button
                       variant="outline"
                       onClick={() => setCheckoutStep(1)}
-                      className="border-stone-300 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      className="border-stone-300 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 cursor-pointer"
                     >
                       Back
                     </Button>
                     <Button
                       onClick={() => setCheckoutStep(3)}
-                      className="bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold"
+                      className="bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold cursor-pointer"
                     >
-                      Review order
+                      Select Payment <ChevronRight className="size-4" />
                     </Button>
                   </div>
                 </div>
               )}
 
-              {/* Step 3: Review */}
+              {/* Step 3: Payment Method */}
               {checkoutStep === 3 && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-extrabold text-emerald-950 dark:text-zinc-100">
+                      Select payment method
+                    </h3>
+                    <p className="text-xs text-stone-500 dark:text-zinc-400">
+                      Choose direct instant escrow or cash on delivery.
+                    </p>
+                  </div>
+
+                  {paymentError && (
+                    <p className="rounded-lg bg-red-50 dark:bg-red-950/50 p-3 text-xs font-semibold text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                      {paymentError}
+                    </p>
+                  )}
+
+                  {/* Payment Options Grid */}
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod("upi");
+                        setPaymentError("");
+                      }}
+                      className={`p-3 rounded-2xl border-2 text-left transition cursor-pointer flex flex-col justify-between gap-2 ${paymentMethod === "upi" ? "border-emerald-700 dark:border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 font-bold" : "border-stone-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800"}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <QrCode className="w-5 h-5 text-emerald-700 dark:text-teal-400" />
+                        {paymentMethod === "upi" && (
+                          <span className="w-4 h-4 rounded-full bg-emerald-700 text-white grid place-items-center">
+                            <Check className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-emerald-950 dark:text-zinc-100">Instant UPI</p>
+                        <p className="text-[10px] text-stone-500 dark:text-zinc-400">GPay / PhonePe</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod("card");
+                        setPaymentError("");
+                      }}
+                      className={`p-3 rounded-2xl border-2 text-left transition cursor-pointer flex flex-col justify-between gap-2 ${paymentMethod === "card" ? "border-emerald-700 dark:border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 font-bold" : "border-stone-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800"}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <CreditCard className="w-5 h-5 text-emerald-700 dark:text-teal-400" />
+                        {paymentMethod === "card" && (
+                          <span className="w-4 h-4 rounded-full bg-emerald-700 text-white grid place-items-center">
+                            <Check className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-emerald-950 dark:text-zinc-100">Cards</p>
+                        <p className="text-[10px] text-stone-500 dark:text-zinc-400">Visa / Mastercard</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod("cod");
+                        setPaymentError("");
+                      }}
+                      className={`p-3 rounded-2xl border-2 text-left transition cursor-pointer flex flex-col justify-between gap-2 ${paymentMethod === "cod" ? "border-emerald-700 dark:border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 font-bold" : "border-stone-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800"}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <Truck className="w-5 h-5 text-emerald-700 dark:text-teal-400" />
+                        {paymentMethod === "cod" && (
+                          <span className="w-4 h-4 rounded-full bg-emerald-700 text-white grid place-items-center">
+                            <Check className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-emerald-950 dark:text-zinc-100">Pay on Delivery</p>
+                        <p className="text-[10px] text-stone-500 dark:text-zinc-400">Cash / QR</p>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Payment Input Forms */}
+                  {paymentMethod === "upi" && (
+                    <div className="p-4 rounded-2xl bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-950 dark:text-zinc-100">
+                          Instant UPI & Escrow
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowQrCode(!showQrCode)}
+                          className="text-xs text-emerald-700 dark:text-teal-400 font-bold hover:underline cursor-pointer"
+                        >
+                          {showQrCode ? "Enter UPI VPA" : "Show Instant QR Code"}
+                        </button>
+                      </div>
+
+                      {showQrCode ? (
+                        <div className="flex flex-col items-center justify-center p-4 bg-emerald-50/50 dark:bg-zinc-900 rounded-xl border border-emerald-200 dark:border-zinc-700 space-y-2">
+                          <div className="p-3 bg-white rounded-xl shadow-md border border-gray-200">
+                            <QrCode className="w-24 h-24 text-emerald-950" />
+                          </div>
+                          <p className="text-[11px] font-bold text-emerald-900 dark:text-zinc-300">
+                            Scan using GPay, PhonePe, Paytm or any UPI App
+                          </p>
+                          <span className="text-[10px] text-gray-500 bg-white dark:bg-zinc-800 px-2 py-0.5 rounded-full border">
+                            Amount: ₹{(cartTotalPrice + deliveryFee).toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <label className="block">
+                            <span className="text-xs font-bold text-stone-700 dark:text-zinc-300">
+                              UPI VPA Handle *
+                            </span>
+                            <Input
+                              value={upiId}
+                              onChange={(e) => setUpiId(e.target.value)}
+                              placeholder="e.g. buyer@okaxis"
+                              className="border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 mt-1"
+                            />
+                          </label>
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <span className="text-[10px] text-gray-500 font-semibold">Fast Select:</span>
+                            {["GPay", "PhonePe", "Paytm", "BHIM"].map((app) => (
+                              <button
+                                key={app}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedUpiApp(app);
+                                  setUpiId(`ramesh.kumar@${app.toLowerCase()}`);
+                                }}
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition cursor-pointer ${selectedUpiApp === app ? "bg-emerald-700 text-white border-emerald-700" : "bg-stone-100 dark:bg-zinc-700 text-stone-700 dark:text-zinc-300 border-stone-300 dark:border-zinc-600"}`}
+                              >
+                                {app}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {paymentMethod === "card" && (
+                    <div className="p-4 rounded-2xl bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 space-y-3">
+                      <label className="block">
+                        <span className="text-xs font-bold text-stone-700 dark:text-zinc-300">
+                          Cardholder Name *
+                        </span>
+                        <Input
+                          value={cardDetails.name}
+                          onChange={(e) => setCardDetails({ ...cardDetails, name: e.target.value })}
+                          className="border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 mt-1"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-bold text-stone-700 dark:text-zinc-300">
+                          Card Number *
+                        </span>
+                        <Input
+                          value={cardDetails.number}
+                          onChange={(e) => setCardDetails({ ...cardDetails, number: e.target.value })}
+                          className="border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 mt-1"
+                        />
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                          <span className="text-xs font-bold text-stone-700 dark:text-zinc-300">
+                            Expiry Date *
+                          </span>
+                          <Input
+                            value={cardDetails.expiry}
+                            onChange={(e) => setCardDetails({ ...cardDetails, expiry: e.target.value })}
+                            placeholder="MM/YY"
+                            className="border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 mt-1"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold text-stone-700 dark:text-zinc-300">
+                            CVV *
+                          </span>
+                          <Input
+                            type="password"
+                            maxLength={4}
+                            value={cardDetails.cvv}
+                            onChange={(e) => setCardDetails({ ...cardDetails, cvv: e.target.value })}
+                            className="border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 mt-1"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {paymentMethod === "cod" && (
+                    <div className="p-4 rounded-2xl bg-amber-50 dark:bg-zinc-800/90 border border-amber-200 dark:border-zinc-700 space-y-2 text-xs">
+                      <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300">
+                        <Truck className="w-4 h-4 text-amber-700" />
+                        <span>Pay cash upon farm produce verification</span>
+                      </div>
+                      <p className="text-stone-600 dark:text-zinc-300 leading-relaxed">
+                        Pay cash or scan rider&apos;s UPI QR code at your doorstep after inspecting crate weight and crop freshness. Note: COD orders incur a nominal ₹20 cash handling charge.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setCheckoutStep(2)}
+                      className="border-stone-300 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 cursor-pointer"
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      onClick={continueFromPayment}
+                      className="bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                    >
+                      Review Order <ChevronRight className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 4: Review */}
+              {checkoutStep === 4 && (
                 <div className="space-y-4">
                   <div>
                     <h3 className="font-extrabold text-emerald-950 dark:text-zinc-100">
@@ -1752,6 +2023,22 @@ export default function MarketplacePage() {
                         ? "Self pickup (free)"
                         : `${chosenPartner?.name} · ${chosenRider?.name} (★ ${chosenRider?.rating}) · ${chosenPartner?.eta}`}
                     </p>
+                    <div className="pt-1.5 flex items-center gap-1.5">
+                      <span className="text-xs text-stone-500 dark:text-zinc-400">Payment:</span>
+                      {paymentMethod === "cod" ? (
+                        <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded text-[10px] font-black">
+                          💵 Pay cash on delivery (+₹20 COD fee)
+                        </span>
+                      ) : paymentMethod === "card" ? (
+                        <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-700" /> Credit / Debit Card
+                        </span>
+                      ) : (
+                        <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-700" /> Instant UPI Escrow ({selectedUpiApp})
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="rounded-xl bg-[#0b3b20] dark:bg-zinc-950 border border-emerald-800 dark:border-zinc-800 p-4 text-white space-y-1">
@@ -1771,11 +2058,17 @@ export default function MarketplacePage() {
                         <span className="font-semibold">₹{deliveryFee}</span>
                       </div>
                     )}
+                    {paymentMethod === "cod" && (
+                      <div className="flex justify-between text-sm text-amber-300">
+                        <span>COD handling charge</span>
+                        <span className="font-semibold">₹20</span>
+                      </div>
+                    )}
                     <div className="mt-2 flex justify-between text-lg font-black border-t border-emerald-800 dark:border-zinc-800 pt-2">
                       <span>Total</span>
                       <span className="text-amber-300">
                         ₹
-                        {(cartTotalPrice + deliveryFee).toLocaleString("en-IN")}
+                        {(cartTotalPrice + deliveryFee + (paymentMethod === "cod" ? 20 : 0)).toLocaleString("en-IN")}
                       </span>
                     </div>
                   </div>
@@ -1783,15 +2076,15 @@ export default function MarketplacePage() {
                   <div className="flex justify-between pt-1">
                     <Button
                       variant="outline"
-                      onClick={() => setCheckoutStep(2)}
-                      className="border-stone-300 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      onClick={() => setCheckoutStep(3)}
+                      className="border-stone-300 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 cursor-pointer"
                     >
                       Back
                     </Button>
                     <Button
                       onClick={handleProceedCartCheckout}
                       disabled={isCheckingOutCart}
-                      className="bg-[#ffd814] hover:bg-[#f7ca00] font-black text-emerald-950 shadow-md"
+                      className="bg-[#ffd814] hover:bg-[#f7ca00] font-black text-emerald-950 shadow-md cursor-pointer"
                     >
                       {isCheckingOutCart ? "Placing..." : "Place order"}
                     </Button>
@@ -2328,9 +2621,45 @@ export default function MarketplacePage() {
                       <span>- ₹{discountAmount.toLocaleString("en-IN")}</span>
                     </div>
                   )}
+                  {paymentMethod === "cod" && (
+                    <div className="flex justify-between text-amber-700 dark:text-amber-400 font-bold">
+                      <span>COD Handling Fee:</span>
+                      <span>+ ₹20</span>
+                    </div>
+                  )}
                   <div className="flex justify-between border-t border-gray-200 dark:border-zinc-700 pt-1.5 font-extrabold text-sm text-[#002f34] dark:text-teal-300">
                     <span>Total Direct Payable:</span>
-                    <span>₹{finalPayable.toLocaleString("en-IN")}</span>
+                    <span>₹{(finalPayable + (paymentMethod === "cod" ? 20 : 0)).toLocaleString("en-IN")}</span>
+                  </div>
+                </div>
+
+                {/* Compact Payment Selector for Direct Buy */}
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-gray-800 dark:text-zinc-200">
+                    Select Payment Method
+                  </span>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("upi")}
+                      className={`p-2 rounded-lg border text-center transition cursor-pointer text-xs font-bold ${paymentMethod === "upi" ? "bg-teal-50 dark:bg-zinc-800 border-teal-600 text-teal-900 dark:text-teal-300" : "border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 text-gray-700 dark:text-zinc-300 hover:bg-gray-100"}`}
+                    >
+                      📱 UPI Escrow
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("card")}
+                      className={`p-2 rounded-lg border text-center transition cursor-pointer text-xs font-bold ${paymentMethod === "card" ? "bg-teal-50 dark:bg-zinc-800 border-teal-600 text-teal-900 dark:text-teal-300" : "border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 text-gray-700 dark:text-zinc-300 hover:bg-gray-100"}`}
+                    >
+                      💳 Card
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("cod")}
+                      className={`p-2 rounded-lg border text-center transition cursor-pointer text-xs font-bold ${paymentMethod === "cod" ? "bg-teal-50 dark:bg-zinc-800 border-teal-600 text-teal-900 dark:text-teal-300" : "border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 text-gray-700 dark:text-zinc-300 hover:bg-gray-100"}`}
+                    >
+                      💵 COD (+₹20)
+                    </button>
                   </div>
                 </div>
 
@@ -2338,7 +2667,7 @@ export default function MarketplacePage() {
                 <Button
                   onClick={handleConfirmOrder}
                   disabled={isOrdering || purchaseQuantity <= 0}
-                  className="w-full bg-[#002f34] hover:bg-[#003d44] dark:bg-teal-600 dark:hover:bg-teal-500 text-white py-3 font-bold text-sm"
+                  className="w-full bg-[#002f34] hover:bg-[#003d44] dark:bg-teal-600 dark:hover:bg-teal-500 text-white py-3 font-bold text-sm cursor-pointer"
                 >
                   {isOrdering
                     ? "Placing Order..."
@@ -2357,8 +2686,24 @@ export default function MarketplacePage() {
                     <span>Quantity:</span>
                     <span>{orderSuccess.quantityKg.toLocaleString()} kg</span>
                   </div>
-                  <div className="flex justify-between text-green-800 dark:text-green-300 font-bold">
-                    <span>Total:</span>
+                  <div className="flex justify-between items-center text-green-800 dark:text-green-300">
+                    <span>Payment Mode:</span>
+                    {orderSuccess.paymentMethod === "cod" ? (
+                      <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded text-[10px] font-black">
+                        💵 Payable via COD on Delivery
+                      </span>
+                    ) : orderSuccess.paymentMethod === "card" ? (
+                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-700" /> Paid via Credit/Debit Card
+                      </span>
+                    ) : (
+                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-700" /> Paid via Instant UPI Escrow
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex justify-between text-green-800 dark:text-green-300 font-bold border-t border-green-200 dark:border-green-900 pt-1.5">
+                    <span>Total Paid/Payable:</span>
                     <span>
                       ₹{orderSuccess.totalAmount.toLocaleString("en-IN")}
                     </span>
