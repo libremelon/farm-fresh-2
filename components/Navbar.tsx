@@ -14,6 +14,7 @@ import {
   User,
   LogOut,
   ChevronDown,
+  Package,
 } from "lucide-react";
 import { useAuthStore, UserRole } from "@/lib/auth-store";
 import { SignInModal } from "@/components/SignInModal";
@@ -185,6 +186,22 @@ export function Navbar() {
                         Role: {currentUser.role.toUpperCase()}
                       </span>
                     </div>
+
+                    {currentUser.role === "buyer" && (
+                      <Link
+                        href="/buyer/marketplace?orders=true"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-teal-50 dark:hover:bg-zinc-800 text-teal-800 dark:text-teal-300 font-bold cursor-pointer flex items-center justify-between mb-1"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Package className="w-3.5 h-3.5 text-teal-600" />
+                          <span>My Orders</span>
+                        </div>
+                        <span className="text-[10px] bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 px-1.5 py-0.2 rounded font-black">
+                          Track
+                        </span>
+                      </Link>
+                    )}
 
                     <button
                       onClick={() => {
