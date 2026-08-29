@@ -131,7 +131,7 @@ export function SignInModal() {
       {/* Backdrop */}
       <div
         onClick={handleClose}
-        className="absolute inset-0 bg-black/70 backdrop-blur-xs transition-opacity animate-in fade-in"
+        className="absolute inset-0 bg-glass-backdrop transition-opacity animate-in fade-in"
       />
 
       {/* Modal Dialog Card */}

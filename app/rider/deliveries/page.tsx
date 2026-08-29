@@ -1,24 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
+
+const emptySubscribe = () => () => {};
 import { Navbar } from "@/components/Navbar";
 import { Avatar } from "@/components/Avatar";
 import { Footer } from "@/components/Footer";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-  MapPin,
-  Clock,
   Navigation,
   Power,
   RotateCcw,
   Check,
   ShieldCheck,
-  Star,
   MessageSquare,
   Map,
-  CircleDot,
   Radio,
   User,
 } from "lucide-react";
@@ -98,20 +94,20 @@ const INITIAL_DELIVERIES: DeliveryOrder[] = [
     id: "del-3",
     cropName: "MP Sharbati Wheat Sacks",
     quantityKg: 1200,
-    pickupName: "Sardar Gurpreet Singh Farms",
-    pickupLocation: "Samana Grain Hub (5 km away)",
-    dropName: "Patiala Kisan Milling Plant",
-    dropLocation: "Focal Point Terminal (18 km trip)",
+    pickupName: "Kisan Producer Org (FPO)",
+    pickupLocation: "Karnal Grains Mandi (5 km away)",
+    dropName: "Central Warehousing Corp",
+    dropLocation: "Sonipat Logistics Depot (22 km trip)",
     payout: 950,
     pickupDistanceKm: 5,
-    tripDistanceKm: 23,
+    tripDistanceKm: 27,
     estTimeMins: 60,
-    vehicleRequired: "Heavy Cargo Pickup Truck",
+    vehicleRequired: "3-Wheeler Loader",
     isHeavy: true,
-    pickupLat: 30.155,
-    pickupLng: 76.191,
-    dropLat: 30.340,
-    dropLng: 76.386,
+    pickupLat: 29.685,
+    pickupLng: 76.99,
+    dropLat: 28.993,
+    dropLng: 77.015,
   },
   {
     id: "del-4",
@@ -140,27 +136,17 @@ const RIDER_REVIEWS: RiderReview[] = [
     id: "rev-1",
     author: "Rameshwar Patel",
     role: "Farmer",
-    rating: 5.0,
+    rating: 5,
     comment:
-      "Arrived at Sonipat farm gate at 6:00 AM sharp. Handled 350kg tomato crates with extreme care. Zero bruising or transit squish.",
+      "Arrived 10 mins early at my Sonipat farm gate! Careful loading of 350 kg tomatoes without damaging crates.",
     date: "Yesterday",
-    tag: "Careful Handling",
+    tag: "Punctual & Careful",
   },
   {
     id: "rev-2",
-    author: "Kisan Milling Cooperative",
-    role: "Bulk Buyer",
-    rating: 4.9,
-    comment:
-      "Fast delivery via Delhi-Sonipat expressway. Verified batch seal before unloading. Excellent logistics partner.",
-    date: "2 days ago",
-    tag: "On-Time Delivery",
-  },
-  {
-    id: "rev-3",
     author: "Jaivik Krishi Kendra",
     role: "Farmer",
-    rating: 5.0,
+    rating: 5,
     comment:
       "Polite communication, covered cargo with clean tarpaulin to protect organic greens from sun heat.",
     date: "3 days ago",
@@ -170,14 +156,16 @@ const RIDER_REVIEWS: RiderReview[] = [
 
 export default function RiderDeliveries() {
   const { currentUser, openAuthModal } = useAuthStore();
-  const isRiderLoggedIn = currentUser && currentUser.role === "rider";
-  const riderName = isRiderLoggedIn ? currentUser.name : "Rajesh Kumar";
-  const riderRating = isRiderLoggedIn ? (currentUser.riderProfile?.rating || 4.92) : 4.92;
+  const isHydrated = useSyncExternalStore(emptySubscribe, () => true, () => false);
+  const activeUser = isHydrated ? currentUser : null;
+  const isRiderLoggedIn = activeUser && activeUser.role === "rider";
+  const riderName = isRiderLoggedIn ? activeUser.name : "Rajesh Kumar";
+  const riderRating = isRiderLoggedIn ? (activeUser.riderProfile?.rating || 4.92) : 4.92;
   const riderVehicle = isRiderLoggedIn
-    ? `${currentUser.riderProfile?.vehicleType || "Electric Tata Ace"} (${currentUser.riderProfile?.vehicleNumber || "DL 1S AB 4421"})`
+    ? `${activeUser.riderProfile?.vehicleType || "Electric Tata Ace"} (${activeUser.riderProfile?.vehicleNumber || "DL 1S AB 4421"})`
     : "Vehicle: Electric Tata Ace (DL 1S AB 4421)";
   const riderSafetyScore = isRiderLoggedIn
-    ? (currentUser.riderProfile?.safetyScore || 99)
+    ? (activeUser.riderProfile?.safetyScore || 99)
     : 99;
 
   const [isOnline, setIsOnline] = useState(true);
@@ -229,152 +217,125 @@ export default function RiderDeliveries() {
   };
 
   return (
-    <div className="min-h-screen bg-[#faf8f2] dark:bg-zinc-950 text-emerald-950 dark:text-zinc-100 flex flex-col font-sans selection:bg-amber-400 selection:text-emerald-950">
+    <div className="min-h-screen bg-stone-50/50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 flex flex-col font-sans">
       {/* 1. UNIFIED NAVBAR */}
       <Navbar />
 
-      {/* 2. ZOMATO-INSPIRED TOP RIDER PROFILE & STATUS BANNER */}
-      <div className="bg-[#0b3b20] text-white border-b-2 border-emerald-800 shadow-md">
+      {/* 2. STREAMLINED RIDER PROFILE & METRICS HEADER BANNER */}
+      <div className="bg-[#0b3b20] text-white border-b border-emerald-800/80 shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-4 sm:py-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          {/* Rider Avatar & Identity */}
+          {/* Left Column: Rider Identity & Vehicle Tag */}
           <div className="flex items-center gap-4">
-            <div className="relative">
+            <div className="relative shrink-0">
               <Avatar
                 name={riderName}
-                className="w-14 h-14 rounded-2xl border-2 border-amber-400 text-base shadow-md sm:h-16 sm:w-16 sm:text-lg bg-emerald-950 text-amber-300"
+                className="w-14 h-14 rounded-2xl border-2 border-amber-400 text-base shadow-md bg-emerald-950 text-amber-300"
               />
               <div className="absolute -bottom-1 -right-1 bg-amber-400 text-emerald-950 rounded-full p-1 shadow">
-                <ShieldCheck className="w-4 h-4 stroke-[3]" />
+                <ShieldCheck className="w-3.5 h-3.5 stroke-[3]" />
               </div>
             </div>
 
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-white font-serif tracking-tight">
+                <h1 className="text-xl font-bold text-white tracking-tight font-sans">
                   {riderName}
                 </h1>
-                <Badge className="bg-amber-400 text-emerald-950 font-black text-[10px] uppercase border-none px-2 py-0.5">
-                  ⭐ Diamond Super Rider
-                </Badge>
+                <span className="bg-amber-400 text-emerald-950 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full">
+                  ★ {riderRating} · Diamond Rider
+                </span>
                 {isRiderLoggedIn ? (
                   <button
                     onClick={() => openAuthModal("rider")}
                     className="text-[10px] font-bold text-amber-300 hover:text-amber-200 underline cursor-pointer"
                   >
-                    Switch Rider
+                    Switch Partner
                   </button>
                 ) : (
                   <button
                     onClick={() => openAuthModal("rider")}
-                    className="bg-amber-400 hover:bg-amber-300 text-emerald-950 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 cursor-pointer transition shadow-xs"
+                    className="bg-amber-400 hover:bg-amber-300 text-emerald-950 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 cursor-pointer transition shadow-xs btn-interactive"
                   >
                     <User className="w-3 h-3" />
-                    <span>Sign In</span>
+                    <span>Sign in</span>
                   </button>
                 )}
               </div>
 
-              <div className="flex items-center gap-3 text-xs text-emerald-200 mt-1 flex-wrap font-medium">
-                <span className="flex items-center gap-1 font-bold text-amber-300">
-                  <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                  {riderRating} Rating (142 ratings)
-                </span>
-                <span>•</span>
+              <div className="flex items-center gap-2 text-xs text-emerald-200/90 mt-1 flex-wrap font-medium">
                 <span>{riderVehicle}</span>
                 <span>•</span>
                 <span className="text-emerald-300">Delhi-Sonipat Corridor</span>
               </div>
+
+              {/* Inline Surge Announcement Chip */}
+              {isOnline && (
+                <div className="mt-2 inline-flex items-center gap-2 text-[11px] text-amber-300 font-semibold bg-emerald-950/70 px-2.5 py-0.5 rounded-full border border-emerald-700/60">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                  <span>Morning Surge: +₹50 bonus per delivered batch</span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Online Toggle & Gamified Quick Metrics */}
+          {/* Right Column: Consolidated Metrics & Duty Toggle */}
           <div className="flex items-center gap-3 self-start md:self-auto flex-wrap">
-            {!isRiderLoggedIn && (
-              <Button
-                onClick={() => openAuthModal("rider")}
-                className="bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black text-xs h-10 rounded-xl px-3.5 shadow-md inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <User className="w-3.5 h-3.5" />
-                <span>Duty Login</span>
-              </Button>
-            )}
-
-            <div className="bg-[#052112] border border-emerald-700/80 px-3.5 py-1.5 rounded-xl text-center hidden sm:block">
-              <span className="text-[10px] text-emerald-300 uppercase font-bold block">
-                Safety Score
-              </span>
-              <span className="text-sm font-black text-amber-300">
-                {riderSafetyScore}% Safe
-              </span>
-            </div>
-
-            <div className="bg-[#052112] border border-emerald-700/80 px-3.5 py-1.5 rounded-xl text-center hidden sm:block">
-              <span className="text-[10px] text-emerald-300 uppercase font-bold block">
-                On-Time SLA
-              </span>
-              <span className="text-sm font-black text-white">98.4%</span>
-            </div>
-
-            {/* Daily Target Goal Pill */}
-            <div className="bg-[#052112] border border-emerald-700/80 px-3.5 py-1.5 rounded-xl hidden md:block">
-              <div className="flex items-center justify-between gap-3 text-[10px] text-emerald-300 font-bold mb-1">
-                <span>🎯 Daily Target</span>
-                <span className="text-amber-300">₹{todayEarnings} / ₹1,200</span>
+            <div className="flex items-center gap-3 bg-[#052112] border border-emerald-800/80 px-4 py-2 rounded-2xl text-xs">
+              <div>
+                <span className="text-[10px] text-emerald-400 font-medium block">
+                  Today&apos;s Earnings
+                </span>
+                <span className="text-sm font-extrabold text-amber-300 font-sans tabular-nums">
+                  ₹{todayEarnings}
+                </span>
               </div>
-              <div className="w-28 h-1.5 bg-emerald-950 rounded-full overflow-hidden border border-emerald-700">
-                <div
-                  className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, Math.round((todayEarnings / 1200) * 100))}%` }}
-                />
+              <div className="h-6 w-px bg-emerald-800" />
+              <div>
+                <span className="text-[10px] text-emerald-400 font-medium block">
+                  Trips
+                </span>
+                <span className="text-sm font-extrabold text-white font-sans tabular-nums">
+                  {todayTrips}
+                </span>
+              </div>
+              <div className="h-6 w-px bg-emerald-800" />
+              <div>
+                <span className="text-[10px] text-emerald-400 font-medium block">
+                  SLA / Safety
+                </span>
+                <span className="text-sm font-extrabold text-white font-sans tabular-nums">
+                  99% / {riderSafetyScore}%
+                </span>
               </div>
             </div>
 
-            {/* Online / Offline Toggle */}
+            {/* Sleek Online / Offline Duty Toggle */}
             <button
               onClick={() => setIsOnline(!isOnline)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition cursor-pointer select-none shadow-md ${
+              className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-extrabold transition cursor-pointer select-none shadow-xs btn-interactive ${
                 isOnline
-                  ? "bg-amber-400 hover:bg-amber-300 text-emerald-950 border-2 border-amber-300"
-                  : "bg-gray-700 hover:bg-gray-600 text-white border-2 border-gray-600"
+                  ? "bg-amber-400 hover:bg-amber-300 text-emerald-950 border border-amber-500/30"
+                  : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700"
               }`}
             >
-              <Power className="w-4 h-4" />
-              <span>
-                {isOnline ? "DUTY: ONLINE" : "DUTY: OFFLINE"}
-              </span>
+              <Power className="w-3.5 h-3.5" />
+              <span>{isOnline ? "Duty Online" : "Duty Offline"}</span>
             </button>
           </div>
         </div>
 
-        {/* Peak Harvest Rush Incentive Alert */}
-        {isOnline && (
-          <div className="bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-emerald-950 px-4 py-2 text-xs font-extrabold flex items-center justify-between border-t border-amber-300 shadow-inner">
-            <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-amber-300 text-[10px] uppercase font-black">
-                  🔥 Active Surge
-                </span>
-                <span>Morning Harvest Rush: +₹50 bonus per delivered crate batch in Sonipat-Azadpur corridor!</span>
-              </span>
-              <span className="hidden sm:inline text-[11px] font-black text-emerald-900">
-                Valid until 11:00 AM • 4 nearby dispatches
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Guest Rider Notification Strip */}
+        {/* Guest Partner Notification Bar */}
         {!isRiderLoggedIn && (
-          <div className="bg-[#052112] text-amber-300 border-t border-emerald-800 px-4 py-2 text-xs font-semibold flex items-center justify-between">
+          <div className="bg-[#052112] text-amber-300 border-t border-emerald-800/60 px-4 py-2 text-xs font-medium flex items-center justify-between">
             <div className="max-w-7xl mx-auto w-full flex items-center justify-between gap-4">
               <span>
-                🔒 Viewing in Guest Mode: Sign in to activate your assigned vehicle GPS tracking and claim active farm dispatches.
+                🔒 Guest Mode: Sign in to activate your assigned vehicle GPS tracking and claim active farm dispatches.
               </span>
               <button
                 onClick={() => openAuthModal("rider")}
-                className="underline font-bold text-white hover:text-amber-200 shrink-0 cursor-pointer"
+                className="underline font-bold text-white hover:text-amber-200 shrink-0 cursor-pointer text-xs"
               >
-                Sign In as Delivery Partner ➔
+                Sign in as Delivery Partner ➔
               </button>
             </div>
           </div>
@@ -385,258 +346,217 @@ export default function RiderDeliveries() {
       <main className="max-w-7xl mx-auto px-4 py-6 w-full flex-1">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* ======================================================== */}
-          {/* LEFT COLUMN (lg:col-span-7): DISPATCHES & ACTIVE TRIP     */}
+          {/* LEFT COLUMN: DISPATCHES & ACTIVE TRIP                     */}
           {/* ======================================================== */}
           <section className="lg:col-span-7 space-y-6">
-            {/* Wallet Statistics Card */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-white dark:bg-zinc-900 border-2 border-amber-200/80 dark:border-zinc-800 p-4 rounded-2xl shadow-sm">
-              <div className="p-2.5 bg-amber-50/50 dark:bg-zinc-800 rounded-xl">
-                <span className="text-[10px] font-black text-amber-800 dark:text-amber-400 uppercase tracking-wider block">
-                  Today&apos;s Net Payout
+            {/* Wallet Summary Card */}
+            <div className="grid grid-cols-3 gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-3xl shadow-xs">
+              <div className="p-3 bg-zinc-50 dark:bg-zinc-800/60 rounded-2xl">
+                <span className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">
+                  Today&apos;s Payout
                 </span>
-                <span className="text-2xl sm:text-3xl font-black text-[#0b3b20] dark:text-emerald-400 font-serif">
+                <span className="text-xl sm:text-2xl font-extrabold text-[#0b3b20] dark:text-emerald-400 font-sans tabular-nums">
                   ₹{todayEarnings}
                 </span>
               </div>
 
-              <div className="p-2.5 bg-amber-50/50 dark:bg-zinc-800 rounded-xl">
-                <span className="text-[10px] font-black text-amber-800 dark:text-amber-400 uppercase tracking-wider block">
+              <div className="p-3 bg-zinc-50 dark:bg-zinc-800/60 rounded-2xl">
+                <span className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">
                   Completed Trips
                 </span>
-                <span className="text-2xl sm:text-3xl font-black text-emerald-950 dark:text-white font-serif">
+                <span className="text-xl sm:text-2xl font-extrabold text-zinc-900 dark:text-white font-sans tabular-nums">
                   {todayTrips} trips
                 </span>
               </div>
 
-              <div className="p-2.5 bg-amber-50/50 dark:bg-zinc-800 rounded-xl col-span-2 sm:col-span-1">
-                <span className="text-[10px] font-black text-amber-800 dark:text-amber-400 uppercase tracking-wider block">
+              <div className="p-3 bg-zinc-50 dark:bg-zinc-800/60 rounded-2xl">
+                <span className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block">
                   Weekly Volume
                 </span>
-                <span className="text-2xl sm:text-3xl font-black text-emerald-950 dark:text-white font-serif">
+                <span className="text-xl sm:text-2xl font-extrabold text-zinc-900 dark:text-white font-sans tabular-nums">
                   1,280 kg
                 </span>
               </div>
             </div>
 
-            {/* ACTIVE TRIP STEP CONTROLLER (If Accepted) */}
+            {/* ACTIVE TRIP CARD */}
             {activeDelivery && (
-              <Card className="pt-0 border-2 border-amber-400 bg-amber-50/40 dark:bg-zinc-900 shadow-xl rounded-3xl overflow-hidden animate-in zoom-in-95">
-                <CardHeader className="bg-[#0b3b20] text-white p-5 border-b border-emerald-800 flex flex-row justify-between items-center">
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden shadow-xs">
+                <div className="bg-[#0b3b20] text-white p-4 flex flex-row justify-between items-center">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black uppercase bg-amber-400 text-emerald-950 px-2.5 py-0.5 rounded-full">
-                        ⚡ Active Trip in Progress
-                      </span>
-                      <span className="text-xs text-emerald-200 font-mono">
-                        {activeDelivery.id}
-                      </span>
-                    </div>
-                    <p className="text-sm font-bold text-white mt-1">
+                    <span className="text-[10px] font-extrabold bg-amber-400 text-emerald-950 px-2.5 py-0.5 rounded-full">
+                      Active Trip
+                    </span>
+                    <h3 className="text-base font-bold text-white mt-1">
                       {activeDelivery.quantityKg} kg {activeDelivery.cropName}
-                    </p>
+                    </h3>
                   </div>
                   <div className="text-right">
-                    <span className="text-[9px] uppercase tracking-wider text-emerald-300 block font-bold">
-                      GUARANTEED PAYOUT
+                    <span className="text-[10px] text-emerald-300 block font-medium">
+                      Guaranteed Payout
                     </span>
-                    <span className="text-2xl font-black text-amber-300 font-serif">
+                    <span className="text-xl font-extrabold text-amber-300 font-sans tabular-nums">
                       ₹{activeDelivery.payout}
                     </span>
                   </div>
-                </CardHeader>
+                </div>
 
-                <CardContent className="p-6 space-y-5">
+                <div className="p-5 space-y-5">
                   {deliveryStep !== "completed" ? (
                     <div className="space-y-4">
-                      {/* Step Progress Checklist */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-black uppercase text-emerald-950 dark:text-zinc-200 tracking-wider">
-                            Dispatch Route Milestones
-                          </h4>
-                          <span className="text-[11px] font-bold text-amber-700">
-                            {deliveryStep === "pickup"
-                              ? "Milestone 1 of 3: Farm Gate Loading"
-                              : deliveryStep === "transit"
-                              ? "Milestone 2 of 3: Highway Express Transit"
-                              : "Milestone 3 of 3: Mandi Unload & POD"}
-                          </span>
+                      {/* Minimalist Route Stepper */}
+                      <div className="space-y-3 bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+                        {/* Step 1: Pickup */}
+                        <div className="flex gap-3 items-start">
+                          <div className="flex flex-col items-center">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                              deliveryStep === "pickup"
+                                ? "bg-emerald-600 text-white"
+                                : "bg-emerald-700 text-white"
+                            }`}>
+                              {deliveryStep === "pickup" ? "1" : <Check className="w-3 h-3 stroke-[3]" />}
+                            </div>
+                            <div className="w-0.5 h-8 bg-zinc-300 dark:bg-zinc-700 my-1" />
+                          </div>
+                          <div className="text-xs">
+                            <span className="font-bold text-zinc-900 dark:text-white block">
+                              🟢 Farm Gate Pickup: {activeDelivery.pickupName}
+                            </span>
+                            <span className="text-zinc-500 block text-[11px]">
+                              {activeDelivery.pickupLocation} ({activeDelivery.quantityKg} kg)
+                            </span>
+                          </div>
                         </div>
 
-                        <div className="space-y-3 bg-white dark:bg-zinc-800/80 p-4 rounded-2xl border border-amber-200/80">
-                          {/* Step 1: Pickup */}
-                          <div className="flex gap-3">
-                            <div className="flex flex-col items-center">
-                              <div
-                                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
-                                  deliveryStep === "pickup"
-                                    ? "bg-amber-400 text-emerald-950 ring-4 ring-amber-200"
-                                    : "bg-emerald-700 text-white"
-                                }`}
-                              >
-                                {deliveryStep === "pickup" ? (
-                                  "1"
-                                ) : (
-                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                )}
-                              </div>
-                              <div className="w-0.5 h-10 bg-amber-200 dark:bg-zinc-700" />
+                        {/* Step 2: Transit */}
+                        <div className="flex gap-3 items-start">
+                          <div className="flex flex-col items-center">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                              deliveryStep === "transit"
+                                ? "bg-amber-400 text-emerald-950"
+                                : deliveryStep === "dropoff"
+                                ? "bg-emerald-700 text-white"
+                                : "bg-zinc-200 dark:bg-zinc-700 text-zinc-500"
+                            }`}>
+                              {deliveryStep === "dropoff" ? <Check className="w-3 h-3 stroke-[3]" /> : "2"}
                             </div>
-                            <div className="text-xs flex-grow pb-1">
-                              <span className="font-extrabold text-emerald-950 dark:text-white block">
-                                🟢 Farm Pickup: {activeDelivery.pickupName}
-                              </span>
-                              <span className="text-gray-500 block">
-                                {activeDelivery.pickupLocation}
-                              </span>
-                              <span className="text-[10px] bg-amber-100 dark:bg-zinc-800 text-amber-900 dark:text-amber-300 px-2 py-0.5 rounded font-black mt-1 inline-block border border-amber-300">
-                                Load: {activeDelivery.quantityKg} kg {activeDelivery.cropName} (Tare Verified)
-                              </span>
+                            <div className="w-0.5 h-8 bg-zinc-300 dark:bg-zinc-700 my-1" />
+                          </div>
+                          <div className="text-xs">
+                            <span className="font-bold text-zinc-900 dark:text-white block">
+                              🛣️ Transit: NH-44 GT Corridor
+                            </span>
+                            <span className="text-zinc-500 block text-[11px]">
+                              {activeDelivery.tripDistanceKm} km • ~{activeDelivery.estTimeMins} mins
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Step 3: Dropoff */}
+                        <div className="flex gap-3 items-start">
+                          <div className="flex flex-col items-center">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                              deliveryStep === "dropoff"
+                                ? "bg-amber-400 text-emerald-950"
+                                : "bg-zinc-200 dark:bg-zinc-700 text-zinc-500"
+                            }`}>
+                              3
                             </div>
                           </div>
-
-                          {/* Step 2: Transit */}
-                          <div className="flex gap-3">
-                            <div className="flex flex-col items-center">
-                              <div
-                                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
-                                  deliveryStep === "transit"
-                                    ? "bg-amber-400 text-emerald-950 ring-4 ring-amber-200"
-                                    : deliveryStep === "dropoff"
-                                    ? "bg-emerald-700 text-white"
-                                    : "bg-gray-200 dark:bg-zinc-800 text-gray-500"
-                                }`}
-                              >
-                                {deliveryStep === "dropoff" ? (
-                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                ) : (
-                                  "2"
-                                )}
-                              </div>
-                              <div className="w-0.5 h-10 bg-amber-200 dark:bg-zinc-700" />
-                            </div>
-                            <div className="text-xs flex-grow pb-1">
-                              <span className="font-extrabold text-emerald-950 dark:text-white block">
-                                🛣️ Highway Transit: NH-44 Grand Trunk Corridor
-                              </span>
-                              <span className="text-gray-500 block">
-                                Distance: {activeDelivery.tripDistanceKm} km • ETA ~{activeDelivery.estTimeMins} mins
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Step 3: Dropoff */}
-                          <div className="flex gap-3">
-                            <div className="flex flex-col items-center">
-                              <div
-                                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
-                                  deliveryStep === "dropoff"
-                                    ? "bg-amber-400 text-emerald-950 ring-4 ring-amber-200"
-                                    : "bg-gray-200 dark:bg-zinc-800 text-gray-600"
-                                }`}
-                              >
-                                3
-                              </div>
-                            </div>
-                            <div className="text-xs flex-grow">
-                              <span className="font-extrabold text-emerald-950 dark:text-white block">
-                                🔴 Drop Destination: {activeDelivery.dropName}
-                              </span>
-                              <span className="text-gray-500 block">
-                                {activeDelivery.dropLocation}
-                              </span>
-                            </div>
+                          <div className="text-xs">
+                            <span className="font-bold text-zinc-900 dark:text-white block">
+                              🔴 Drop Destination: {activeDelivery.dropName}
+                            </span>
+                            <span className="text-zinc-500 block text-[11px]">
+                              {activeDelivery.dropLocation}
+                            </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Primary Navigation / Step Button */}
-                      <Button
+                      {/* Single High-Visibility CTA Button */}
+                      <button
                         onClick={handleNextStep}
-                        className="w-full bg-[#0b3b20] hover:bg-[#072a16] text-amber-300 py-4 font-black text-sm rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                        className="w-full bg-[#0b3b20] hover:bg-emerald-800 text-amber-300 py-3 px-4 font-bold text-xs rounded-2xl flex items-center justify-center gap-2 cursor-pointer shadow-xs btn-interactive"
                       >
-                        <Navigation className="w-4 h-4" />
+                        <Navigation className="w-4 h-4 text-amber-400" />
                         <span>
                           {deliveryStep === "pickup"
-                            ? "✓ Crates Loaded at Farm Gate ➔ Start Highway Transit"
+                            ? "Confirm Farm Pickup & Start Transit"
                             : deliveryStep === "transit"
-                            ? "✓ Reached APMC Terminal Gate ➔ Proceed to Weighbridge"
-                            : `✓ Unloaded & Digital POD Verified ➔ Collect ₹${activeDelivery.payout}`}
+                            ? "Arrive at APMC Terminal & Unload"
+                            : `Complete POD & Collect ₹${activeDelivery.payout}`}
                         </span>
-                      </Button>
+                      </button>
                     </div>
                   ) : (
-                    /* Success Finished screen */
+                    /* Finished Delivery screen */
                     <div className="text-center py-4 space-y-4">
-                      <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-2xl mx-auto border-2 border-emerald-400 shadow-sm">
+                      <div className="w-12 h-12 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 flex items-center justify-center text-xl mx-auto border border-emerald-300">
                         ✓
                       </div>
                       <div>
-                        <h4 className="font-black text-lg text-emerald-950 dark:text-white font-serif">
+                        <h4 className="font-bold text-base text-zinc-900 dark:text-white">
                           Trip Completed Successfully!
                         </h4>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Direct driver payout of{" "}
-                          <strong>₹{activeDelivery.payout}</strong> has been
-                          credited to your wallet.
+                        <p className="text-xs text-zinc-500 mt-0.5">
+                          Payout of <strong>₹{activeDelivery.payout}</strong> has been added to your daily wallet.
                         </p>
                       </div>
-                      <Button
+                      <button
                         onClick={handleFinishDelivery}
-                        className="w-full bg-[#0b3b20] hover:bg-[#072a16] text-amber-300 font-bold rounded-xl"
+                        className="w-full bg-[#0b3b20] hover:bg-emerald-800 text-amber-300 py-2.5 font-bold text-xs rounded-2xl btn-interactive cursor-pointer"
                       >
                         Accept Next Sourced Trip ➔
-                      </Button>
+                      </button>
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             )}
 
             {/* INCOMING DISPATCH REQUESTS FEED */}
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <div>
-                  <h3 className="text-base font-black text-emerald-950 dark:text-white tracking-tight uppercase font-serif">
+                  <h3 className="text-base font-bold text-zinc-900 dark:text-white tracking-tight">
                     Nearby Sourced Farm Requests
                   </h3>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-zinc-500">
                     Direct dispatches from verified regional APMC mandi farms
                   </p>
                 </div>
-                <span className="text-xs font-bold text-amber-800 dark:text-amber-400 bg-amber-100 dark:bg-zinc-800 px-2.5 py-0.5 rounded-full border border-amber-300">
+                <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-3 py-1 rounded-full border border-zinc-200 dark:border-zinc-700">
                   {deliveries.length} loads available
                 </span>
               </div>
 
               {!isOnline ? (
                 /* Offline Mode Banner */
-                <div className="bg-white dark:bg-zinc-900 border-2 border-dashed border-amber-300 dark:border-zinc-800 p-8 rounded-3xl text-center space-y-3">
-                  <span className="text-3xl block">📴</span>
-                  <h4 className="font-black text-sm text-emerald-950 dark:text-white">
+                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-3xl text-center space-y-3">
+                  <span className="text-2xl block">📴</span>
+                  <h4 className="font-bold text-sm text-zinc-900 dark:text-white">
                     You are currently offline
                   </h4>
-                  <p className="text-xs text-gray-500 max-w-xs mx-auto">
-                    Toggle your status to ONLINE above to start receiving live
-                    farm-to-mandi cargo pickup requests.
+                  <p className="text-xs text-zinc-500 max-w-xs mx-auto">
+                    Toggle your status to Duty Online above to receive live farm pickup requests.
                   </p>
                 </div>
               ) : deliveries.length === 0 ? (
                 /* Empty State */
-                <div className="bg-white dark:bg-zinc-900 border-2 border-amber-200/80 dark:border-zinc-800 p-8 rounded-3xl text-center space-y-3">
-                  <span className="text-3xl block">🔎</span>
-                  <h4 className="font-black text-sm text-emerald-950 dark:text-white">
+                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-3xl text-center space-y-3">
+                  <span className="text-2xl block">🔎</span>
+                  <h4 className="font-bold text-sm text-zinc-900 dark:text-white">
                     Looking for nearby farm loads...
                   </h4>
-                  <p className="text-xs text-gray-500">
-                    New listings appear as soon as farmers schedule harvest
-                    dispatch.
+                  <p className="text-xs text-zinc-500">
+                    New listings appear as soon as farmers schedule harvest dispatch.
                   </p>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setDeliveries(INITIAL_DELIVERIES)}
-                    className="flex items-center gap-1 mx-auto text-xs font-bold rounded-xl"
+                    className="flex items-center gap-1 mx-auto text-xs font-bold rounded-2xl"
                   >
                     <RotateCcw className="w-3.5 h-3.5" /> Reset Demo Requests
                   </Button>
@@ -649,94 +569,76 @@ export default function RiderDeliveries() {
                     return (
                       <div
                         key={del.id}
-                        className={`bg-white dark:bg-zinc-900 border-2 rounded-2xl p-5 shadow-sm transition ${
+                        className={`bg-white dark:bg-zinc-900 border rounded-3xl p-4 transition-all duration-200 shadow-xs space-y-3 ${
                           isActive
-                            ? "border-amber-400 bg-amber-50/20"
-                            : "border-amber-200/80 dark:border-zinc-800 hover:border-amber-400"
+                            ? "border-amber-400 bg-amber-50/10 dark:bg-amber-950/10"
+                            : "border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700"
                         }`}
                       >
-                        {/* Top Details & Payout */}
-                        <div className="flex justify-between items-start gap-3 border-b border-amber-100 dark:border-zinc-800 pb-3">
-                          <div className="space-y-1">
+                        {/* Header: Title, Vehicle Tag, Crisp Tabular Badge Payout */}
+                        <div className="flex items-start justify-between gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                          <div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-black text-sm text-emerald-950 dark:text-white">
-                                📦 {del.quantityKg} kg {del.cropName}
+                              <span className="font-bold text-sm text-zinc-900 dark:text-white">
+                                {del.quantityKg} kg {del.cropName}
                               </span>
-                              <span className="text-[10px] font-black bg-amber-100 text-emerald-950 px-2 py-0.5 rounded border border-amber-300">
+                              <span className="text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2.5 py-0.5 rounded-full border border-zinc-200 dark:border-zinc-700">
                                 {del.vehicleRequired}
                               </span>
                             </div>
-                            <p className="text-[10px] text-gray-400">
-                              Order ID: {del.id}
-                            </p>
                           </div>
 
-                          {/* Payout */}
-                          <div className="text-right shrink-0 bg-[#0b3b20] px-3.5 py-1.5 rounded-xl text-white border border-emerald-700">
-                            <span className="text-[9px] uppercase tracking-wider text-amber-300 block font-bold">
-                              RIDER PAYOUT
+                          {/* Crisp Tabular Payout Indicator */}
+                          <div className="text-right shrink-0 bg-[#0b3b20] px-3 py-1.5 rounded-2xl text-white">
+                            <span className="text-[10px] text-amber-300 block font-semibold">
+                              Payout
                             </span>
-                            <span className="text-xl font-black text-amber-300 font-serif">
+                            <span className="text-base font-extrabold text-amber-300 font-sans tabular-nums">
                               ₹{del.payout}
                             </span>
                           </div>
                         </div>
 
-                        {/* Route Timeline */}
-                        <div className="py-3.5 space-y-2 text-xs">
-                          <div className="flex items-start gap-2">
-                            <span className="text-emerald-700 shrink-0 font-black">
-                              🟢 Pickup:
+                        {/* Clean Route Visual Timeline */}
+                        <div className="space-y-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                            <span className="font-semibold text-zinc-900 dark:text-white truncate">
+                              {del.pickupName}
                             </span>
-                            <div>
-                              <span className="font-bold text-emerald-950 dark:text-white block">
-                                {del.pickupName}
-                              </span>
-                              <span className="text-[11px] text-gray-500">
-                                {del.pickupLocation}
-                              </span>
-                            </div>
+                            <span className="text-zinc-400 truncate text-[11px]">
+                              ({del.pickupLocation})
+                            </span>
                           </div>
-                          <div className="flex items-start gap-2">
-                            <span className="text-red-500 shrink-0 font-black">
-                              🔴 Dropoff:
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                            <span className="font-semibold text-zinc-900 dark:text-white truncate">
+                              {del.dropName}
                             </span>
-                            <div>
-                              <span className="font-bold text-emerald-950 dark:text-white block">
-                                {del.dropName}
-                              </span>
-                              <span className="text-[11px] text-gray-500">
-                                {del.dropLocation}
-                              </span>
-                            </div>
+                            <span className="text-zinc-400 truncate text-[11px]">
+                              ({del.dropLocation})
+                            </span>
                           </div>
                         </div>
 
-                        {/* Metadata footer strip */}
-                        <div className="border-t border-amber-100 dark:border-zinc-800 pt-3 flex items-center justify-between text-xs text-gray-500 font-medium">
-                          <div className="flex items-center gap-3">
-                            <span className="flex items-center gap-1 font-semibold text-emerald-900 dark:text-zinc-300">
-                              <Clock className="w-3.5 h-3.5 text-amber-600" />{" "}
-                              {del.estTimeMins} mins
-                            </span>
-                            <span className="flex items-center gap-1 font-semibold text-emerald-900 dark:text-zinc-300">
-                              <MapPin className="w-3.5 h-3.5 text-amber-600" />{" "}
-                              {del.tripDistanceKm} km
-                            </span>
-                          </div>
+                        {/* Bottom Metric Badge + Actions */}
+                        <div className="border-t border-zinc-100 dark:border-zinc-800 pt-3 flex items-center justify-between text-xs text-zinc-500 font-medium">
+                          <span className="font-semibold text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-1 rounded-full text-[11px] tabular-nums">
+                            {del.tripDistanceKm} km · {del.estTimeMins} mins
+                          </span>
 
                           <div className="flex gap-2">
                             <button
                               onClick={() => handleDecline(del.id)}
-                              className="px-3 py-1.5 border border-amber-300 rounded-xl hover:bg-amber-50 text-gray-600 font-bold transition cursor-pointer text-xs"
+                              className="px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 rounded-2xl hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-semibold transition cursor-pointer text-xs btn-interactive"
                             >
                               Decline
                             </button>
                             <button
                               onClick={() => handleAccept(del)}
-                              className="px-4 py-1.5 bg-[#0b3b20] hover:bg-[#072a16] text-amber-300 rounded-xl font-black transition cursor-pointer text-xs shadow-xs"
+                              className="px-4 py-1.5 bg-[#0b3b20] hover:bg-emerald-800 text-amber-300 rounded-2xl font-bold transition cursor-pointer text-xs btn-interactive shadow-xs"
                             >
-                              {isActive ? "Viewing Route 🚀" : "Accept Trip 🚀"}
+                              {isActive ? "Viewing Route" : "Accept Trip"}
                             </button>
                           </div>
                         </div>
@@ -749,35 +651,25 @@ export default function RiderDeliveries() {
           </section>
 
           {/* ======================================================== */}
-          {/* RIGHT COLUMN (lg:col-span-5): LIVE MAP & CUSTOMER REVIEWS */}
+          {/* RIGHT COLUMN: LIVE MAP & CUSTOMER REVIEWS                 */}
           {/* ======================================================== */}
           <aside className="lg:col-span-5 space-y-6 lg:sticky lg:top-24">
-            {/* 1. OpenStreetMap Interactive Route Card */}
-            <div className="bg-white dark:bg-zinc-900 border-2 border-amber-300 dark:border-zinc-800 rounded-3xl p-5 shadow-md overflow-hidden space-y-4">
-              <div className="flex items-center justify-between border-b border-amber-100 dark:border-zinc-800 pb-3">
+            {/* OpenStreetMap Card */}
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 shadow-xs overflow-hidden space-y-3">
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-zinc-800 flex items-center justify-center text-amber-700">
-                    <Map className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-black text-sm text-emerald-950 dark:text-white font-serif">
-                      Live OpenStreetMap Route
-                    </h3>
-                    <span className="text-[10px] text-gray-500 font-semibold block">
-                      Delhi NCR & Sonipat APMC Corridor
-                    </span>
-                  </div>
+                  <Map className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <h3 className="font-bold text-xs text-zinc-900 dark:text-white">
+                    Live OpenStreetMap Route
+                  </h3>
                 </div>
-
-                <Badge className="bg-emerald-100 text-emerald-900 text-[10px] font-black border-emerald-300 flex items-center gap-1">
-                  <Radio className="w-3 h-3 text-emerald-700 animate-pulse" />
-                  GPS ACTIVE
-                </Badge>
+                <span className="text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-400 px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300/40">
+                  <Radio className="w-2.5 h-2.5 text-emerald-600 animate-pulse" /> GPS Active
+                </span>
               </div>
 
-              {/* Map Preview Container with OpenStreetMap tiles & animated SVG pulse line */}
-              <div className="relative rounded-2xl overflow-hidden border-2 border-amber-200 bg-[#e8ece9] dark:bg-zinc-950 aspect-[4/3] shadow-inner flex flex-col justify-between p-3">
-                {/* Embedded OpenStreetMap Tile Simulator */}
+              {/* Integrated Map Container with Floating Overlay */}
+              <div className="relative rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-zinc-900 aspect-[4/3] shadow-inner flex flex-col justify-between p-3">
                 <iframe
                   title="OpenStreetMap Sourcing Route"
                   className="absolute inset-0 w-full h-full border-none opacity-85 pointer-events-none"
@@ -788,165 +680,85 @@ export default function RiderDeliveries() {
                   }&layer=mapnik`}
                 />
 
-                {/* Animated Route Path Line Overlay (SVG) */}
+                {/* Animated Route SVG Overlay */}
                 <svg viewBox="0 0 320 220" className="absolute inset-0 w-full h-full pointer-events-none z-10">
                   <defs>
-                    <linearGradient
-                      id="routeGrad"
-                      x1="0%"
-                      y1="0%"
-                      x2="100%"
-                      y2="100%"
-                    >
+                    <linearGradient id="routeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
                       <stop offset="0%" stopColor="#10b981" />
                       <stop offset="50%" stopColor="#f59e0b" />
                       <stop offset="100%" stopColor="#ef4444" />
                     </linearGradient>
-                    <filter id="glowPulse" x="-20%" y="-20%" width="140%" height="140%">
-                      <feGaussianBlur stdDeviation="2.5" result="blur" />
-                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                    </filter>
                   </defs>
-
-                  {/* Route Polyline Background Glow */}
-                  <path
-                    d="M 50,55 Q 125,75 160,110 T 260,165"
-                    fill="none"
-                    stroke="#10b981"
-                    strokeWidth="6"
-                    strokeOpacity="0.25"
-                  />
-
-                  {/* Animated Dash Polyline */}
-                  <path
-                    id="routePulseTrack"
-                    d="M 50,55 Q 125,75 160,110 T 260,165"
-                    fill="none"
-                    stroke="url(#routeGrad)"
-                    strokeWidth="3.5"
-                    strokeDasharray="6 4"
-                    className="animate-pulse"
-                  />
-
-                  {/* Traveling Cargo Vehicle Beacon */}
-                  <circle r="5.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="2" filter="url(#glowPulse)">
-                    <animateMotion
-                      dur="3.2s"
-                      repeatCount="indefinite"
-                      path="M 50,55 Q 125,75 160,110 T 260,165"
-                    />
-                  </circle>
-
-                  {/* Farm Origin Beacon */}
-                  <circle cx="50" cy="55" r="11" fill="none" stroke="#10b981" strokeWidth="1.5" className="animate-ping" />
-                  <circle cx="50" cy="55" r="4.5" fill="#10b981" stroke="#ffffff" strokeWidth="2" />
-
-                  {/* Mandi Dropoff Beacon */}
-                  <circle cx="260" cy="165" r="11" fill="none" stroke="#ef4444" strokeWidth="1.5" className="animate-ping" />
-                  <circle cx="260" cy="165" r="4.5" fill="#ef4444" stroke="#ffffff" strokeWidth="2" />
+                  <path d="M 50,55 Q 125,75 160,110 T 260,165" fill="none" stroke="url(#routeGrad)" strokeWidth="3" strokeDasharray="5 3" className="animate-pulse" />
+                  <circle cx="50" cy="55" r="4.5" fill="#10b981" stroke="#ffffff" strokeWidth="1.5" />
+                  <circle cx="260" cy="165" r="4.5" fill="#ef4444" stroke="#ffffff" strokeWidth="1.5" />
                 </svg>
 
-                {/* Top Metrics Floating Pill */}
-                <div className="relative z-20 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xs border border-amber-300 rounded-xl p-2.5 shadow-md flex items-center justify-between text-xs font-bold">
-                  <div className="flex items-center gap-2 text-emerald-950 dark:text-white">
-                    <Navigation className="w-3.5 h-3.5 text-amber-600" />
-                    <span>
-                      Trip:{" "}
-                      {activeDelivery
-                        ? `${activeDelivery.tripDistanceKm} km`
-                        : "14 km"}
-                    </span>
-                  </div>
-                  <div className="text-amber-800 dark:text-amber-400 font-black">
-                    ETA:{" "}
-                    {activeDelivery
-                      ? `${activeDelivery.estTimeMins} mins`
-                      : "40 mins"}
-                  </div>
+                {/* Floating Top Route Info Badge Overlay */}
+                <div className="relative z-20 bg-black/75 backdrop-blur-md border border-zinc-700/60 rounded-xl p-2 shadow-md flex items-center justify-between text-xs font-bold text-white">
+                  <span className="flex items-center gap-1 text-[11px]">
+                    <Navigation className="w-3 h-3 text-amber-400" />
+                    {activeDelivery ? `${activeDelivery.tripDistanceKm} km` : "14 km"}
+                  </span>
+                  <span className="text-[11px] text-amber-300">
+                    ETA ~{activeDelivery ? `${activeDelivery.estTimeMins} mins` : "40 mins"}
+                  </span>
                 </div>
 
-                {/* Marker Overlay Indicators */}
-                <div className="relative z-20 flex justify-between items-end pt-12 gap-2">
-                  <div className="bg-[#0b3b20] text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow-md border border-amber-300 flex items-center gap-1 truncate max-w-[48%]">
-                    <CircleDot className="w-3 h-3 text-emerald-400 shrink-0" />
-                    <span className="truncate">{activeDelivery?.pickupName || "Sonipat Farm Gate"}</span>
-                  </div>
-                  <div className="bg-red-700 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow-md border border-red-300 flex items-center gap-1 truncate max-w-[48%]">
-                    <MapPin className="w-3 h-3 text-white shrink-0" />
-                    <span className="truncate">{activeDelivery?.dropName || "Azadpur APMC Terminal"}</span>
-                  </div>
+                {/* Integrated Floating Milestone Overlay */}
+                <div className="relative z-20 bg-black/75 backdrop-blur-md rounded-xl p-2 border border-zinc-700/60 text-[11px] text-zinc-200">
+                  <span className="font-semibold text-amber-300 block text-[10px]">
+                    Turn-by-turn Milestone:
+                  </span>
+                  <p className="truncate text-zinc-300 text-[11px]">
+                    {deliveryStep === "pickup"
+                      ? "Feeder road to Sonipat farm gate for loading"
+                      : deliveryStep === "transit"
+                      ? "Merge onto NH-44 GT Corridor toward Azadpur"
+                      : "Azadpur Gate 4 weighbridge commercial lane"}
+                  </p>
                 </div>
-              </div>
-
-              {/* Turn-by-Turn Guidance Preview */}
-              <div className="bg-amber-50 dark:bg-zinc-800/60 p-3 rounded-xl border border-amber-200 text-xs space-y-1">
-                <span className="font-extrabold text-amber-900 dark:text-amber-300 block text-[10px] uppercase">
-                  🛣️ Next Highway Milestone:
-                </span>
-                <p className="text-emerald-950 dark:text-zinc-200 font-medium">
-                  {deliveryStep === "pickup"
-                    ? "Arrive at farm gate via state highway feeder road. Confirm load crates with farmer."
-                    : deliveryStep === "transit"
-                    ? "Merge onto NH-44 Grand Trunk Express corridor heading toward Mukarba Chowk Flyover. Smooth flow reported."
-                    : "Enter Azadpur APMC Terminal Gate 4 commercial lane for weighbridge digital slip."}
-                </p>
               </div>
             </div>
 
-            {/* 2. Rider Rating & Customer Reviews Card */}
-            <div className="bg-white dark:bg-zinc-900 border-2 border-amber-200/80 dark:border-zinc-800 rounded-3xl p-5 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-amber-100 dark:border-zinc-800 pb-3">
+            {/* Flattened Customer Reviews Card */}
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-4 shadow-xs space-y-3">
+              <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-100 dark:bg-zinc-800 flex items-center justify-center text-emerald-800">
-                    <MessageSquare className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-black text-sm text-emerald-950 dark:text-white font-serif">
-                      Customer & Farmer Feedback
-                    </h3>
-                    <span className="text-[10px] text-gray-500 font-semibold block">
-                      Based on 142 recent farm dispatches
-                    </span>
-                  </div>
+                  <MessageSquare className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <h3 className="font-bold text-xs text-zinc-900 dark:text-white">
+                    Feedback & Ratings
+                  </h3>
                 </div>
-
-                <div className="flex items-center gap-1 text-xs font-black text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
-                  <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
-                  <span>4.92 / 5.0</span>
-                </div>
+                <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                  ★ 4.92 / 5.0
+                </span>
               </div>
 
-              {/* Review Item List */}
-              <div className="space-y-3">
+              {/* Flattened Review Rows */}
+              <div className="space-y-2.5">
                 {RIDER_REVIEWS.map((rev) => (
                   <div
                     key={rev.id}
-                    className="bg-[#faf8f2] dark:bg-zinc-800/80 p-3.5 rounded-2xl border border-amber-200/70 dark:border-zinc-700 space-y-1.5"
+                    className="p-2.5 bg-zinc-50 dark:bg-zinc-800/60 rounded-2xl border border-zinc-100 dark:border-zinc-800 space-y-1"
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-xs text-emerald-950 dark:text-white">
-                          {rev.author}
-                        </span>
-                        <span className="text-[10px] font-bold bg-amber-100 text-emerald-950 px-1.5 py-0.2 rounded border border-amber-300">
-                          {rev.role}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 text-[11px] font-extrabold text-amber-600">
-                        <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                        <span>{rev.rating}</span>
-                      </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                        {rev.author} ({rev.role}) • ★ {rev.rating}
+                      </span>
+                      <span className="text-[10px] text-zinc-400 shrink-0">
+                        {rev.date}
+                      </span>
                     </div>
 
-                    <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed font-medium">
+                    <p className="text-xs text-zinc-600 dark:text-zinc-300 line-clamp-2 leading-relaxed font-medium">
                       &ldquo;{rev.comment}&rdquo;
                     </p>
 
-                    <div className="flex items-center justify-between text-[10px] text-gray-400 pt-0.5">
-                      <span className="bg-emerald-50 dark:bg-zinc-900 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded font-bold border border-emerald-200">
-                        ✓ {rev.tag}
+                    <div className="pt-0.5">
+                      <span className="text-[10px] font-semibold text-zinc-500 bg-zinc-200/60 dark:bg-zinc-700/60 px-2 py-0.5 rounded-full">
+                        {rev.tag}
                       </span>
-                      <span>{rev.date}</span>
                     </div>
                   </div>
                 ))}

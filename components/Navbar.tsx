@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -14,17 +14,22 @@ import {
   User,
   LogOut,
   ChevronDown,
+  Package,
 } from "lucide-react";
 import { useAuthStore, UserRole } from "@/lib/auth-store";
 import { SignInModal } from "@/components/SignInModal";
 import { Avatar } from "@/components/Avatar";
 
+const emptySubscribe = () => () => {};
+
 export function Navbar() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const isHydrated = useSyncExternalStore(emptySubscribe, () => true, () => false);
 
   const { currentUser, logout, openAuthModal } = useAuthStore();
+  const activeUser = isHydrated ? currentUser : null;
 
   const currentPortalRole: UserRole = pathname.startsWith("/farmer")
     ? "farmer"
@@ -149,21 +154,21 @@ export function Navbar() {
           {/* Quick CTA, Sign In & Mobile Hamburger */}
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Context-Aware Sign In / User Profile Button */}
-            {currentUser ? (
+            {activeUser ? (
               <div className="relative">
                 <button
                   onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#072a16] hover:bg-emerald-800/60 border border-emerald-600 text-xs font-bold transition cursor-pointer text-white"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-[#072a16] hover:bg-emerald-800/60 border border-emerald-600 text-xs font-bold transition cursor-pointer text-white btn-interactive"
                 >
-                  <Avatar name={currentUser.name} className="w-6 h-6 rounded-lg text-[10px] border border-amber-400" />
+                  <Avatar name={activeUser.name} className="w-6 h-6 rounded-lg text-[10px] border border-amber-400" />
                   <div className="text-left hidden sm:block">
                     <span className="block leading-tight font-extrabold max-w-[90px] truncate">
-                      {currentUser.name}
+                      {activeUser.name}
                     </span>
                     <span className="block text-[9px] text-amber-300 font-semibold uppercase">
-                      {currentUser.role === "farmer"
+                      {activeUser.role === "farmer"
                         ? "🧑‍🌾 Kisaan"
-                        : currentUser.role === "rider"
+                        : activeUser.role === "rider"
                         ? "🛵 Rider"
                         : "🛒 Consumer"}
                     </span>
@@ -176,15 +181,31 @@ export function Navbar() {
                   <div className="absolute right-0 top-11 w-56 bg-white dark:bg-zinc-900 rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-800 p-2 z-50 animate-in fade-in zoom-in-95 text-xs text-gray-800 dark:text-zinc-200">
                     <div className="p-2.5 bg-emerald-50 dark:bg-zinc-800 rounded-xl mb-1.5">
                       <span className="font-extrabold text-emerald-950 dark:text-white block">
-                        {currentUser.name}
+                        {activeUser.name}
                       </span>
                       <span className="text-[10px] text-gray-500 block truncate">
-                        {currentUser.phone}
+                        {activeUser.phone}
                       </span>
                       <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 block mt-0.5">
-                        Role: {currentUser.role.toUpperCase()}
+                        Role: {activeUser.role.toUpperCase()}
                       </span>
                     </div>
+
+                    {activeUser.role === "buyer" && (
+                      <Link
+                        href="/buyer/marketplace?orders=true"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="w-full text-left px-3 py-2 rounded-lg hover:bg-teal-50 dark:hover:bg-zinc-800 text-teal-800 dark:text-teal-300 font-bold cursor-pointer flex items-center justify-between mb-1"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Package className="w-3.5 h-3.5 text-teal-600" />
+                          <span>My Orders</span>
+                        </div>
+                        <span className="text-[10px] bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 px-1.5 py-0.2 rounded font-black">
+                          Track
+                        </span>
+                      </Link>
+                    )}
 
                     <button
                       onClick={() => {

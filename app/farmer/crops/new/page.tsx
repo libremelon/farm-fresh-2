@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useSyncExternalStore } from "react";
+
+const emptySubscribe = () => () => {};
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
@@ -225,6 +227,8 @@ const CROP_PRESETS: Record<string, CropConfig> = {
 
 export default function NewCropPage() {
   const { currentUser, openAuthModal } = useAuthStore();
+  const isHydrated = useSyncExternalStore(emptySubscribe, () => true, () => false);
+  const activeUser = isHydrated ? currentUser : null;
   const [selectedCrop, setSelectedCrop] = useState<string>("Tomato");
   const [customCrop, setCustomCrop] = useState<string>("");
   const [quantity, setQuantity] = useState<string>("500");
@@ -443,7 +447,7 @@ export default function NewCropPage() {
       {/* 2. MAIN RESPONSIVE CONTAINER WITH SIDEBAR GRID */}
       <main className="max-w-7xl mx-auto px-4 py-8 w-full flex-1">
         {/* Header Ribbon */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-zinc-900 border-2 border-amber-200/80 dark:border-zinc-800 p-5 rounded-2xl shadow-xs">
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-zinc-900 border-2 border-amber-200/80 dark:border-zinc-800 p-5 rounded-3xl shadow-xs">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="bg-[#0b3b20] text-amber-300 text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full">
@@ -460,16 +464,16 @@ export default function NewCropPage() {
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
-            {currentUser && currentUser.role === "farmer" ? (
+            {activeUser && activeUser.role === "farmer" ? (
               <div className="flex items-center gap-2 p-1.5 pr-3 rounded-2xl bg-amber-50 dark:bg-zinc-800 border-2 border-amber-300">
                 <Avatar
-                  name={currentUser.name}
+                  name={activeUser.name}
                   className="w-8 h-8 rounded-xl text-xs bg-[#0b3b20] text-amber-300 border border-amber-400"
                 />
                 <div className="text-left">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-black text-emerald-950 dark:text-white leading-tight">
-                      {currentUser.name}
+                      {activeUser.name}
                     </span>
                     <span className="bg-emerald-100 text-emerald-800 text-[9px] font-black px-1.5 py-0.2 rounded-full flex items-center gap-0.5">
                       <ShieldCheck className="w-2.5 h-2.5" />
@@ -477,8 +481,8 @@ export default function NewCropPage() {
                     </span>
                   </div>
                   <span className="text-[10px] text-gray-500 block leading-tight">
-                    {currentUser.farmerProfile?.kisanId || "KCC-HR-894120"} •{" "}
-                    {currentUser.farmerProfile?.district || "Sonipat"}
+                    {activeUser.farmerProfile?.kisanId || "KCC-HR-894120"} •{" "}
+                    {activeUser.farmerProfile?.district || "Sonipat"}
                   </span>
                 </div>
                 <button

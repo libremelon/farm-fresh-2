@@ -5,25 +5,15 @@ import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { mockListings, mockFarmers } from "@/lib/mock-data";
+import { mockListings } from "@/lib/mock-data";
 import {
   ArrowRight,
   Sparkles,
   ShieldCheck,
-  Check,
   Store,
-  Boxes,
   Truck,
   Sprout,
-  MapPin,
-  TrendingUp,
-  Award,
-  Users,
-  Clock,
-  HeartHandshake,
   ChevronRight,
-  Sun,
   Scale,
   Leaf,
 } from "lucide-react";
@@ -131,7 +121,7 @@ export default function Home() {
                 <Link href="/buyer/marketplace" className="w-full sm:w-auto">
                   <Button
                     size="lg"
-                    className="w-full sm:w-auto bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-emerald-950 font-black px-8 py-6 text-base rounded-xl shadow-xl shadow-amber-500/20 border border-amber-300 cursor-pointer"
+                    className="w-full sm:w-auto bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-emerald-950 font-black px-8 py-6 text-base rounded-2xl shadow-xl shadow-amber-500/20 border border-amber-300 cursor-pointer btn-interactive"
                   >
                     <Store className="w-5 h-5 mr-2" />
                     <span>Explore Mandi Marketplace</span>
@@ -142,7 +132,7 @@ export default function Home() {
                   <Button
                     size="lg"
                     variant="outline"
-                    className="w-full sm:w-auto bg-emerald-900/60 border-emerald-600/80 text-white hover:bg-emerald-800/80 font-bold px-8 py-6 text-base rounded-xl shadow-md cursor-pointer"
+                    className="w-full sm:w-auto bg-emerald-900/60 border-emerald-600/80 text-white hover:bg-emerald-800/80 font-bold px-8 py-6 text-base rounded-2xl shadow-md cursor-pointer btn-interactive"
                   >
                     <Sprout className="w-5 h-5 mr-2 text-amber-400" />
                     <span>Farmer Crop Listing</span>
@@ -392,7 +382,7 @@ export default function Home() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveRoleTab(tab.id as any)}
+                  onClick={() => setActiveRoleTab(tab.id as "farmer" | "buyer" | "bulk" | "rider")}
                   className={`flex-1 min-w-[120px] py-2.5 px-3 rounded-xl text-xs font-black transition cursor-pointer flex flex-col items-center justify-center ${
                     isSelected
                       ? "bg-[#0b3b20] text-amber-300 shadow-md scale-[1.02]"

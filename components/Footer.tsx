@@ -15,7 +15,7 @@ export function Footer() {
         <div>
           <Link href="/" className="inline-flex items-center gap-2.5">
             <span className="grid size-10 place-items-center rounded-xl bg-amber-400 text-xl text-emerald-950"><Sprout className="size-5" /></span>
-            <span className="text-xl font-black tracking-tight text-white">FarmFresh</span>
+            <span className="text-xl font-black tracking-tight text-white font-serif">FarmFresh</span>
           </Link>
           <p className="mt-3 max-w-sm text-sm leading-relaxed text-emerald-100/70">
             India&apos;s direct farm network for fair prices, fresh produce, and dependable local delivery.

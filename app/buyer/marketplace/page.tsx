@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useSyncExternalStore } from "react";
+
+const emptySubscribe = () => () => {};
 import Link from "next/link";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
@@ -29,13 +31,14 @@ import {
   Phone,
   Truck,
   QrCode,
-  Store,
-  Grid,
-  ArrowRight,
   Star,
   Layers,
   CreditCard,
   User,
+  Package,
+  RotateCcw,
+  CheckCircle2,
+  Radio,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 
@@ -107,6 +110,8 @@ type PlacedOrder = {
   deliveryMode: "self" | "partner";
   partner?: DeliveryPartner;
   rider?: Rider;
+  paymentMethod: "cod" | "card" | "upi";
+  paymentStatus: "pending" | "paid";
   placedAt: Date;
 };
 
@@ -196,6 +201,8 @@ export interface DirectOrderSuccess {
   rawPrice: number;
   discountAmount: number;
   totalAmount: number;
+  paymentMethod: "cod" | "card" | "upi";
+  paymentStatus: "pending" | "paid";
 }
 
 export interface AssignedRiderInfo {
@@ -205,6 +212,100 @@ export interface AssignedRiderInfo {
   etaMinutes: number;
   routePolyline?: string;
 }
+
+export interface OrderRecord {
+  orderId: string;
+  placedAt: Date;
+  status: "Confirmed" | "In Transit" | "Out for Delivery" | "Delivered" | "Cancelled";
+  items: {
+    cropId: string;
+    cropName: string;
+    cropImage: string;
+    sellerName: string;
+    pricePerKg: number;
+    quantityKg: number;
+  }[];
+  totalPrice: number;
+  totalKg: number;
+  paymentMethod: "cod" | "card" | "upi";
+  paymentStatus: "pending" | "paid";
+  deliveryPartner: string;
+  riderInfo?: {
+    name: string;
+    phone: string;
+    vehicle: string;
+    rating: number;
+  };
+  eta: string;
+  addressSummary: string;
+}
+
+const INITIAL_ORDERS: OrderRecord[] = [
+  {
+    orderId: "AMZ-AGRI-984210",
+    placedAt: new Date(Date.now() - 35 * 60 * 1000),
+    status: "Out for Delivery",
+    items: [
+      {
+        cropId: "crop_tomato",
+        cropName: "Shimla Himsona Tomato",
+        cropImage: "https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=800&auto=format&fit=crop&q=80",
+        sellerName: "Rameshwar Patel",
+        pricePerKg: 24,
+        quantityKg: 50,
+      },
+      {
+        cropId: "crop_onion",
+        cropName: "Nashik Red Onion",
+        cropImage: "https://images.unsplash.com/photo-1618512496248-a07fe83aa8ce?w=800&auto=format&fit=crop&q=80",
+        sellerName: "Suresh Deshmukh",
+        pricePerKg: 32,
+        quantityKg: 25,
+      },
+    ],
+    totalPrice: 2000,
+    totalKg: 75,
+    paymentMethod: "upi",
+    paymentStatus: "paid",
+    deliveryPartner: "AgriExpress Logistics",
+    riderInfo: {
+      name: "Aman Kumar",
+      phone: "+91 98100 12345",
+      vehicle: "Tata Ace (HR 69 AG 4821)",
+      rating: 4.9,
+    },
+    eta: "18 mins away (Arriving ~11:45 AM)",
+    addressSummary: "Flat 4B, Gulmohar Enclave, New Delhi",
+  },
+  {
+    orderId: "AMZ-AGRI-742911",
+    placedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+    status: "Delivered",
+    items: [
+      {
+        cropId: "crop_mango",
+        cropName: "Alphonso Ratnagiri Mango",
+        cropImage: "https://images.unsplash.com/photo-1553279768-865429fa0078?w=800&auto=format&fit=crop&q=80",
+        sellerName: "Ganesh Shinde",
+        pricePerKg: 140,
+        quantityKg: 20,
+      },
+    ],
+    totalPrice: 2800,
+    totalKg: 20,
+    paymentMethod: "card",
+    paymentStatus: "paid",
+    deliveryPartner: "FarmLink Express",
+    riderInfo: {
+      name: "Sunita Devi",
+      phone: "+91 98100 23456",
+      vehicle: "EV Cargo Auto (DL 1L F 7740)",
+      rating: 4.8,
+    },
+    eta: "Delivered on 27 Aug, 09:30 AM",
+    addressSummary: "Flat 4B, Gulmohar Enclave, New Delhi",
+  },
+];
 
 export default function MarketplacePage() {
   const [commodities, setCommodities] = useState<MultiSellerCrop[]>([]);
@@ -219,7 +320,6 @@ export default function MarketplacePage() {
   const [selectedLocationName, setSelectedLocationName] = useState(
     "Delhi NCR Mandi Corridor",
   );
-  const [showAppBanner, setShowAppBanner] = useState(true);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const { currentUser, openAuthModal, logout } = useAuthStore();
@@ -298,9 +398,22 @@ export default function MarketplacePage() {
   const [selectedPartner, setSelectedPartner] = useState("agri_express");
   const [selectedRider, setSelectedRider] = useState("rider_aman");
   const [showCheckoutWizard, setShowCheckoutWizard] = useState(false);
-  const [checkoutStep, setCheckoutStep] = useState<1 | 2 | 3>(1);
+  const [checkoutStep, setCheckoutStep] = useState<1 | 2 | 3 | 4>(1);
   const [addressError, setAddressError] = useState("");
   const [placedOrder, setPlacedOrder] = useState<PlacedOrder | null>(null);
+
+  // Payment State
+  const [paymentMethod, setPaymentMethod] = useState<"cod" | "card" | "upi">("upi");
+  const [cardDetails, setCardDetails] = useState({
+    name: "Ramesh Kumar",
+    number: "4532 8912 3456 7890",
+    expiry: "08/28",
+    cvv: "892",
+  });
+  const [upiId, setUpiId] = useState("ramesh.kumar@okaxis");
+  const [selectedUpiApp, setSelectedUpiApp] = useState("GPay");
+  const [showQrCode, setShowQrCode] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
 
   // Selected Listing for Detail Modal / Seller Comparison
   const [selectedListing, setSelectedListing] =
@@ -319,6 +432,31 @@ export default function MarketplacePage() {
   const [isOrdering, setIsOrdering] = useState(false);
   const [riderInfo, setRiderInfo] = useState<AssignedRiderInfo | null>(null);
   const [isAssigningRider, setIsAssigningRider] = useState(false);
+  // Orders Management State
+  const [ordersHistory, setOrdersHistory] = useState<OrderRecord[]>(INITIAL_ORDERS);
+  const [isOrdersModalOpen, setIsOrdersModalOpen] = useState(false);
+  const [ordersTab, setOrdersTab] = useState<"active" | "past">("active");
+  const [ratingModalItem, setRatingModalItem] = useState<{ cropName: string; sellerName: string } | null>(null);
+  const [ratingStars, setRatingStars] = useState(5);
+  const [ratingSuccessToast, setRatingSuccessToast] = useState("");
+  const [reAddToast, setReAddToast] = useState("");
+  const isHydrated = useSyncExternalStore(emptySubscribe, () => true, () => false);
+
+  const activeOrdersCount = ordersHistory.filter(
+    (o) => o.status !== "Delivered" && o.status !== "Cancelled",
+  ).length;
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("orders") === "true") {
+        const timer = setTimeout(() => setIsOrdersModalOpen(true), 0);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, []);
+
+  const activeUser = isHydrated ? currentUser : null;
 
   const categories = [
     "All",
@@ -591,21 +729,127 @@ export default function MarketplacePage() {
     : 0;
   const finalPayable = rawPrice - discountAmount;
 
+  // Cancel Active Order
+  const handleCancelOrder = (orderId: string) => {
+    setOrdersHistory((prev) =>
+      prev.map((ord) =>
+        ord.orderId === orderId ? { ...ord, status: "Cancelled" as const } : ord,
+      ),
+    );
+  };
+
+  // Buy Again Action (Re-adds items to cart)
+  const handleBuyAgain = (order: OrderRecord) => {
+    const newCartItems: CartItem[] = order.items.map((item) => {
+      const mockListing: FlattenedListing = {
+        cropId: item.cropId,
+        cropName: item.cropName,
+        category: "Vegetables",
+        cropImage: item.cropImage,
+        mandiBenchmarkPrice: item.pricePerKg + 2,
+        cropDescription: "Fresh direct farm produce",
+        seller: {
+          sellerId: "farm_" + item.cropId,
+          farmerName: item.sellerName,
+          rating: 4.9,
+          grade: "Grade A",
+          pricePerKg: item.pricePerKg,
+          availableStockKg: 1000,
+          location: "Sonipat Vegetable Corridor",
+          totalSales: "100+ orders",
+          distanceKm: 5,
+          variety: "Organic Fresh",
+          phone: "+91 98123 45678",
+          harvestBadge: "Fresh Pick",
+        },
+        allSellersInCrop: [],
+      };
+      return {
+        sellerId: mockListing.seller.sellerId,
+        cropId: item.cropId,
+        cropName: item.cropName,
+        cropImage: item.cropImage,
+        sellerName: item.sellerName,
+        sellerLocation: "Sonipat Vegetable Belt (4 km away)",
+        sellerRating: 4.9,
+        sellerGrade: "Grade A",
+        pricePerKg: item.pricePerKg,
+        quantityKg: item.quantityKg,
+        availableStockKg: 1000,
+        listing: mockListing,
+        seller: mockListing.seller,
+      };
+    });
+
+    setCart((prev) => [...prev, ...newCartItems]);
+    setIsOrdersModalOpen(false);
+    setIsCartOpen(true);
+    setReAddToast(`Re-added ${order.items.length} produce item(s) to cart!`);
+    setTimeout(() => setReAddToast(""), 4000);
+  };
+
+  // Rate Farmer Produce Modal
+  const handleOpenRating = (cropName: string, sellerName: string) => {
+    setRatingModalItem({ cropName, sellerName });
+    setRatingStars(5);
+  };
+
+  const handleSubmitRating = () => {
+    const target = ratingModalItem;
+    setRatingSuccessToast(
+      `🌟 Thank you! Your ${ratingStars}-star rating for ${target?.sellerName}'s produce has been recorded.`,
+    );
+    setRatingModalItem(null);
+    setTimeout(() => setRatingSuccessToast(""), 4000);
+  };
+
   // Confirm single order execution
   const handleConfirmOrder = async () => {
     if (!orderingItem || !activeSellerForPurchase) return;
     setIsOrdering(true);
+    const codFee = paymentMethod === "cod" ? 20 : 0;
+    const finalAmountWithPayment = finalPayable + codFee;
+
     setTimeout(() => {
+      const generatedOrderId = "AGRI-" + Math.floor(100000 + Math.random() * 900000);
       setOrderSuccess({
-        orderId: "AGRI-" + Math.floor(100000 + Math.random() * 900000),
+        orderId: generatedOrderId,
         seller: activeSellerForPurchase,
         listing: orderingItem.listing,
         quantityKg: purchaseQuantity,
         mode: purchaseMode,
         rawPrice,
         discountAmount,
-        totalAmount: finalPayable,
+        totalAmount: finalAmountWithPayment,
+        paymentMethod,
+        paymentStatus: paymentMethod === "cod" ? "pending" : "paid",
       });
+
+      // Append to orders history
+      const newRecord: OrderRecord = {
+        orderId: generatedOrderId,
+        placedAt: new Date(),
+        status: "Confirmed",
+        items: [
+          {
+            cropId: orderingItem.listing.cropId,
+            cropName: orderingItem.listing.cropName,
+            cropImage: orderingItem.listing.cropImage,
+            sellerName: activeSellerForPurchase.farmerName,
+            pricePerKg: activeSellerForPurchase.pricePerKg,
+            quantityKg: purchaseQuantity,
+          },
+        ],
+        totalPrice: finalAmountWithPayment,
+        totalKg: purchaseQuantity,
+        paymentMethod,
+        paymentStatus: paymentMethod === "cod" ? "pending" : "paid",
+        deliveryPartner: "AgriExpress Logistics",
+        eta: "25–40 mins away",
+        addressSummary: "Default Saved Hub",
+      };
+      setOrdersHistory((prev) => [newRecord, ...prev]);
+
       setIsOrdering(false);
     }, 650);
   };
@@ -636,6 +880,7 @@ export default function MarketplacePage() {
     setIsCartOpen(false);
     setCheckoutStep(1);
     setAddressError("");
+    setPaymentError("");
     if (currentUser?.buyerProfile?.deliveryAddress) {
       setDeliveryAddress(currentUser.buyerProfile.deliveryAddress);
     }
@@ -659,22 +904,76 @@ export default function MarketplacePage() {
     setCheckoutStep(2);
   };
 
+  const continueFromPayment = () => {
+    if (paymentMethod === "card") {
+      if (!cardDetails.number.trim() || !cardDetails.cvv.trim()) {
+        setPaymentError("Please complete all required card fields.");
+        return;
+      }
+    } else if (paymentMethod === "upi" && !showQrCode) {
+      if (!upiId.trim()) {
+        setPaymentError("Please enter a valid UPI VPA handle or scan QR code.");
+        return;
+      }
+    }
+    setPaymentError("");
+    setCheckoutStep(4);
+  };
+
   // Finalise Cart Checkout
   const handleProceedCartCheckout = () => {
     if (cart.length === 0) return;
     setIsCheckingOutCart(true);
+    const codFee = paymentMethod === "cod" ? 20 : 0;
+    const totalOrderAmount = cartTotalPrice + deliveryFee + codFee;
+
     setTimeout(() => {
+      const generatedOrderId = "AMZ-AGRI-" + Math.floor(100000 + Math.random() * 900000);
       setPlacedOrder({
-        orderId: "AMZ-AGRI-" + Math.floor(100000 + Math.random() * 900000),
+        orderId: generatedOrderId,
         items: [...cart],
-        totalPrice: cartTotalPrice + deliveryFee,
+        totalPrice: totalOrderAmount,
         totalKg: cartTotalItems,
         address: deliveryAddress,
         deliveryMode,
         partner: deliveryMode === "partner" ? chosenPartner : undefined,
         rider: deliveryMode === "partner" ? chosenRider : undefined,
+        paymentMethod,
+        paymentStatus: paymentMethod === "cod" ? "pending" : "paid",
         placedAt: new Date(),
       });
+
+      // Append to orders history
+      const newRecord: OrderRecord = {
+        orderId: generatedOrderId,
+        placedAt: new Date(),
+        status: "In Transit",
+        items: cart.map((item) => ({
+          cropId: item.cropId,
+          cropName: item.cropName,
+          cropImage: item.cropImage,
+          sellerName: item.sellerName,
+          pricePerKg: item.pricePerKg,
+          quantityKg: item.quantityKg,
+        })),
+        totalPrice: totalOrderAmount,
+        totalKg: cartTotalItems,
+        paymentMethod,
+        paymentStatus: paymentMethod === "cod" ? "pending" : "paid",
+        deliveryPartner: chosenPartner?.name || "AgriExpress Logistics",
+        riderInfo: chosenRider
+          ? {
+              name: chosenRider.name,
+              phone: chosenRider.phone,
+              vehicle: chosenRider.vehicle,
+              rating: chosenRider.rating,
+            }
+          : undefined,
+        eta: chosenPartner?.eta || "30–45 mins away",
+        addressSummary: `${deliveryAddress.addressLine1}, ${deliveryAddress.city}`,
+      };
+      setOrdersHistory((prev) => [newRecord, ...prev]);
+
       setCart([]);
       setIsCheckingOutCart(false);
       setShowCheckoutWizard(false);
@@ -697,30 +996,31 @@ export default function MarketplacePage() {
       {/* 1. TOP LIVE MANDI TICKER & UNIFIED NAVBAR */}
       <Navbar />
 
-      {/* 2. SIGNATURE OLX SEARCH & AMAZON CART HEADER */}
-      <header className="sticky top-[73px] z-30 bg-white dark:bg-zinc-900 border-b border-gray-200 dark:border-zinc-800 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3 md:gap-6">
+      {/* 2. CONSOLIDATED 2-ROW MARKETPLACE HEADER */}
+      <header className="sticky top-[73px] z-30 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 shadow-xs">
+        {/* ROW 1: Location Selector, Search Bar, Cart Basket, My Orders & Account */}
+        <div className="max-w-7xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3 md:gap-4">
           {/* Location Selector Dropdown */}
           <div className="relative shrink-0 hidden sm:block">
             <button
               onClick={() => setShowLocationModal(!showLocationModal)}
-              className="flex items-center gap-2 px-3 py-2 border-2 border-[#002f34] dark:border-zinc-700 rounded-md bg-white dark:bg-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-700/50 transition cursor-pointer text-sm font-semibold max-w-[210px] truncate"
+              className="flex items-center gap-2 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-2xl bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700/60 transition cursor-pointer text-xs font-semibold max-w-[200px] truncate text-zinc-900 dark:text-zinc-100 btn-interactive"
             >
-              <MapPin className="w-4 h-4 text-[#002f34] dark:text-teal-400 shrink-0" />
+              <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
               <span className="truncate">{selectedLocationName}</span>
-              <ChevronDown className="w-4 h-4 text-gray-500 shrink-0 ml-auto" />
+              <ChevronDown className="w-3.5 h-3.5 text-zinc-400 shrink-0 ml-auto" />
             </button>
 
             {/* Location Dropdown Modal */}
             {showLocationModal && (
-              <div className="absolute top-12 left-0 w-80 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 shadow-xl rounded-lg p-4 z-50 animate-in fade-in zoom-in-95">
+              <div className="absolute top-12 left-0 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl rounded-2xl p-4 z-50 animate-in fade-in zoom-in-95">
                 <div className="flex justify-between items-center mb-3">
-                  <span className="font-bold text-sm text-[#002f34] dark:text-white">
+                  <span className="font-bold text-xs text-zinc-900 dark:text-white">
                     Delivery & Sourcing Hub
                   </span>
                   <button
                     onClick={() => setShowLocationModal(false)}
-                    className="text-gray-400 hover:text-gray-700 dark:hover:text-white cursor-pointer"
+                    className="text-zinc-400 hover:text-zinc-700 dark:hover:text-white cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -728,9 +1028,9 @@ export default function MarketplacePage() {
 
                 <div className="space-y-3">
                   <div>
-                    <div className="flex justify-between text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                    <div className="flex justify-between text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1">
                       <span>Search Radius</span>
-                      <span className="text-teal-600 dark:text-teal-400 font-bold">
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">
                         {radius} km
                       </span>
                     </div>
@@ -745,8 +1045,8 @@ export default function MarketplacePage() {
                     />
                   </div>
 
-                  <div className="border-t border-gray-100 dark:border-zinc-800 pt-2">
-                    <span className="text-[11px] font-bold uppercase text-gray-400 block mb-1.5">
+                  <div className="border-t border-zinc-100 dark:border-zinc-800 pt-2">
+                    <span className="text-[10px] font-bold uppercase text-zinc-400 block mb-1.5">
                       Popular Agricultural Hubs
                     </span>
                     <div className="space-y-1">
@@ -757,15 +1057,15 @@ export default function MarketplacePage() {
                             setSelectedLocationName(loc.name);
                             setShowLocationModal(false);
                           }}
-                          className={`w-full text-left px-2.5 py-1.5 rounded text-xs flex items-center justify-between hover:bg-teal-50 dark:hover:bg-teal-950/40 cursor-pointer ${
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer ${
                             selectedLocationName === loc.name
-                              ? "bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 font-bold"
-                              : "text-gray-700 dark:text-gray-300"
+                              ? "bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold"
+                              : "text-zinc-700 dark:text-zinc-300"
                           }`}
                         >
                           <span>{loc.name}</span>
                           {selectedLocationName === loc.name && (
-                            <Check className="w-3.5 h-3.5 text-teal-600" />
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
                           )}
                         </button>
                       ))}
@@ -783,108 +1083,129 @@ export default function MarketplacePage() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder='Search "Tomatoes, Rameshwar Patel, Onions, MP Wheat, Devgad Mangoes..."'
-                className="w-full pl-4 pr-12 py-2.5 border-2 border-[#002f34] dark:border-zinc-700 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white dark:bg-zinc-800 text-sm placeholder-gray-400 dark:placeholder-zinc-500 shadow-inner transition font-medium"
+                placeholder='Search "Tomatoes, Onions, MP Wheat, Devgad Mangoes..."'
+                className="w-full pl-4 pr-12 py-2 border border-zinc-300 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-zinc-50 dark:bg-zinc-800/80 text-xs placeholder-zinc-400 dark:placeholder-zinc-500 transition font-medium text-zinc-900 dark:text-zinc-100"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-12 text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+                  className="absolute right-12 text-zinc-400 hover:text-zinc-600 p-1 cursor-pointer"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               )}
               <button
                 type="button"
-                className="absolute right-1 top-1 bottom-1 px-4 bg-[#002f34] dark:bg-teal-600 hover:bg-[#003d44] dark:hover:bg-teal-500 text-white rounded flex items-center justify-center transition cursor-pointer"
+                className="absolute right-1.5 top-1.5 bottom-1.5 px-3 bg-[#0b3b20] dark:bg-emerald-600 hover:bg-emerald-800 text-white rounded-xl flex items-center justify-center transition cursor-pointer btn-interactive"
               >
-                <Search className="w-4 h-4" />
+                <Search className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
-          {/* Right Header Navigation Icons */}
-          <div className="flex items-center gap-3 shrink-0">
-            {/* AMAZON-STYLE CART BUTTON */}
+          {/* Right Header Controls */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* CART BASKET BUTTON */}
             <button
               onClick={() => setIsCartOpen(true)}
-              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-100 hover:bg-amber-200 dark:bg-zinc-800 text-[#002f34] dark:text-amber-300 font-extrabold transition cursor-pointer border-2 border-amber-400 shadow-xs relative"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-emerald-950 font-bold text-xs transition cursor-pointer shadow-xs relative btn-interactive border border-amber-500/30"
               title="View Shopping Cart Basket"
             >
               <div className="relative flex items-center justify-center">
-                <ShoppingCart className="w-5 h-5 text-[#002f34] dark:text-amber-300" />
+                <ShoppingCart className="w-4 h-4 text-emerald-950" />
                 {cart.length > 0 && (
-                  <span className="absolute -top-2.5 -right-2.5 bg-red-600 text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow">
+                  <span className="absolute -top-2.5 -right-2 bg-red-600 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow">
                     {cart.length}
                   </span>
                 )}
               </div>
-              <div className="flex flex-col text-left leading-none hidden sm:block">
-                <span className="text-[9px] uppercase font-bold text-gray-600 dark:text-gray-400">
-                  Cart Basket
-                </span>
-                <span className="text-xs font-black text-[#002f34] dark:text-amber-300">
-                  ₹{cartTotalPrice.toLocaleString("en-IN")}
-                </span>
-              </div>
+              <span className="font-extrabold text-xs hidden sm:inline">
+                ₹{cartTotalPrice.toLocaleString("en-IN")}
+              </span>
             </button>
 
-            {/* CONSUMER SIGN IN / ACCOUNT BUTTON */}
-            {currentUser && currentUser.role === "buyer" ? (
+            {/* MY ORDERS BUTTON */}
+            <button
+              onClick={() => setIsOrdersModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-semibold text-xs transition cursor-pointer border border-zinc-200 dark:border-zinc-700 relative btn-interactive"
+              title="View My Orders"
+            >
+              <Package className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span className="hidden md:inline">Orders</span>
+              {activeOrdersCount > 0 && (
+                <span className="bg-emerald-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full ml-0.5">
+                  {activeOrdersCount}
+                </span>
+              )}
+            </button>
+
+            {/* USER PROFILE / SIGN IN */}
+            {activeUser && activeUser.role === "buyer" ? (
               <div className="relative">
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-teal-50 dark:bg-zinc-800 border-2 border-teal-600 dark:border-teal-500 text-xs font-bold transition cursor-pointer hover:bg-teal-100 dark:hover:bg-zinc-700/60"
+                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-2xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold transition cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-700 btn-interactive"
                 >
                   <Avatar
-                    name={currentUser.name}
-                    className="w-5 h-5 rounded-full text-[9px] bg-[#002f34] text-amber-300"
+                    name={activeUser.name}
+                    className="w-5 h-5 rounded-full text-[9px] bg-[#0b3b20] text-amber-300"
                   />
-                  <div className="text-left hidden sm:block">
-                    <span className="text-[9px] text-gray-500 block leading-none">
-                      Hello,
-                    </span>
-                    <span className="text-xs font-black text-[#002f34] dark:text-white block leading-none truncate max-w-[80px]">
-                      {currentUser.name.split(" ")[0]}
-                    </span>
-                  </div>
-                  <ChevronDown className="w-3 h-3 text-teal-700 dark:text-teal-300" />
+                  <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 hidden sm:inline max-w-[80px] truncate">
+                    {activeUser.name.split(" ")[0]}
+                  </span>
+                  <ChevronDown className="w-3 h-3 text-zinc-400" />
                 </button>
 
                 {showUserMenu && (
-                  <div className="absolute right-0 top-10 w-64 bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-zinc-800 p-3 z-50 animate-in fade-in zoom-in-95 text-xs">
-                    <div className="p-2.5 bg-teal-50 dark:bg-zinc-800 rounded-xl mb-2">
-                      <span className="font-black text-sm text-[#002f34] dark:text-white block">
-                        {currentUser.name}
+                  <div className="absolute right-0 top-10 w-64 bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-3 z-50 animate-in fade-in zoom-in-95 text-xs">
+                    <div className="p-2.5 bg-emerald-50 dark:bg-zinc-800 rounded-xl mb-2">
+                      <span className="font-extrabold text-xs text-zinc-900 dark:text-white block">
+                        {activeUser.name}
                       </span>
-                      <span className="text-[10px] text-gray-500 block">
-                        {currentUser.phone}
+                      <span className="text-[10px] text-zinc-500 block">
+                        {activeUser.phone}
                       </span>
                       <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 block mt-1">
-                        🏆 {currentUser.buyerProfile?.loyaltyTier || "FarmFresh Gold"}
+                        🏆 {activeUser.buyerProfile?.loyaltyTier || "FarmFresh Gold"}
                       </span>
                     </div>
 
-                    {currentUser.buyerProfile?.deliveryAddress && (
-                      <div className="space-y-1 text-gray-600 dark:text-gray-300 pb-1">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                    <button
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        setIsOrdersModalOpen(true);
+                      }}
+                      className="w-full text-left p-2 rounded-xl bg-amber-50 dark:bg-zinc-800 hover:bg-amber-100 dark:hover:bg-zinc-700 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-between cursor-pointer mb-2 border border-amber-200 dark:border-zinc-700"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Package className="w-3.5 h-3.5 text-amber-700 dark:text-amber-400" />
+                        <span>My FarmFresh Orders</span>
+                      </div>
+                      <span className="bg-amber-400 text-emerald-950 text-[10px] font-black px-1.5 py-0.2 rounded-full">
+                        {ordersHistory.length}
+                      </span>
+                    </button>
+
+                    {activeUser.buyerProfile?.deliveryAddress && (
+                      <div className="space-y-1 text-zinc-600 dark:text-zinc-300 pb-1">
+                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
                           Saved Delivery Hub:
                         </p>
                         <p className="text-[11px] font-medium leading-tight">
-                          {currentUser.buyerProfile.deliveryAddress.addressLine1},{" "}
-                          {currentUser.buyerProfile.deliveryAddress.city} (
-                          {currentUser.buyerProfile.deliveryAddress.pincode})
+                          {activeUser.buyerProfile.deliveryAddress.addressLine1},{" "}
+                          {activeUser.buyerProfile.deliveryAddress.city} (
+                          {activeUser.buyerProfile.deliveryAddress.pincode})
                         </p>
                       </div>
                     )}
 
-                    <div className="pt-2 mt-2 border-t border-gray-100 dark:border-zinc-800 flex justify-between items-center">
+                    <div className="pt-2 mt-2 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
                       <button
                         onClick={() => {
                           setShowUserMenu(false);
                           openAuthModal("buyer");
                         }}
-                        className="text-[11px] font-bold text-teal-700 dark:text-teal-400 hover:underline cursor-pointer"
+                        className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
                       >
                         Switch Account
                       </button>
@@ -904,61 +1225,29 @@ export default function MarketplacePage() {
             ) : (
               <button
                 onClick={() => openAuthModal("buyer")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border-2 border-[#002f34] dark:border-teal-500/80 bg-white dark:bg-zinc-800 hover:bg-teal-50 dark:hover:bg-zinc-700 text-xs font-extrabold text-[#002f34] dark:text-teal-300 transition cursor-pointer shadow-xs"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-xs font-bold text-zinc-800 dark:text-zinc-200 transition cursor-pointer btn-interactive"
               >
-                <User className="w-3.5 h-3.5 text-teal-700 dark:text-teal-400" />
-                <span className="hidden sm:inline">Hello,</span>
+                <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span>Sign in</span>
               </button>
             )}
-
-            {/* Bulk Order shortcut */}
-            <Link
-              href="/buyer/bulk-order"
-              className="hidden lg:flex items-center gap-1.5 text-xs font-bold text-gray-700 dark:text-gray-300 hover:text-teal-600 dark:hover:text-teal-400 px-2.5 py-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 transition"
-            >
-              <Store className="w-4 h-4" />
-              <span>Bulk 1,000kg+</span>
-            </Link>
-
-            {/* Signature OLX + SELL Button */}
-            <Link
-              href="/farmer/crops/new"
-              className="relative inline-flex items-center justify-center p-0.5 overflow-hidden text-sm font-extrabold text-gray-900 rounded-full group bg-gradient-to-br from-yellow-400 via-teal-400 to-blue-600 hover:from-yellow-500 hover:to-blue-700 shadow-md hover:shadow-lg active:scale-95 transition-all"
-            >
-              <span className="relative px-4 py-1.5 transition-all ease-in duration-75 bg-white dark:bg-zinc-900 rounded-full group-hover:bg-opacity-0 group-hover:text-white flex items-center gap-1.5 text-[#002f34] dark:text-white font-black">
-                <Plus className="w-4 h-4 stroke-[3]" />
-                <span>SELL</span>
-              </span>
-            </Link>
           </div>
         </div>
 
-        {/* 3. CATEGORY SUB-HEADER BAR */}
-        <div className="bg-white dark:bg-zinc-900 border-t border-gray-100 dark:border-zinc-800 px-4">
-          <div className="max-w-7xl mx-auto flex items-center justify-between overflow-x-auto scrollbar-none py-2 gap-2">
-            {/* All Categories Dropdown Trigger */}
-            <div
-              onClick={() => setSelectedCategory("All")}
-              className="flex items-center gap-1 shrink-0 font-extrabold text-xs text-[#002f34] dark:text-teal-400 uppercase tracking-wider pr-3 border-r border-gray-200 dark:border-zinc-800 cursor-pointer hover:opacity-80"
-            >
-              <Grid className="w-3.5 h-3.5" />
-              <span>ALL CATEGORIES</span>
-              <ChevronDown className="w-3.5 h-3.5" />
-            </div>
-
-            {/* Category Chips */}
-            <div className="flex items-center gap-1.5 md:gap-2 flex-1">
+        {/* ROW 2: Horizontal Category Chips & APMC Live Status */}
+        <div className="bg-zinc-50/70 dark:bg-zinc-900/90 border-t border-zinc-200/80 dark:border-zinc-800 px-4 py-2">
+          <div className="max-w-7xl mx-auto flex items-center justify-between overflow-x-auto scrollbar-none gap-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none flex-1 py-0.5">
               {categories.map((cat) => {
                 const isActive = selectedCategory === cat;
                 return (
                   <button
                     key={cat}
                     onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
+                    className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition cursor-pointer btn-interactive ${
                       isActive
-                        ? "bg-[#002f34] text-white dark:bg-teal-600 dark:text-white shadow-xs"
-                        : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-800"
+                        ? "bg-[#0b3b20] text-amber-300 dark:bg-emerald-600 dark:text-white font-bold shadow-xs"
+                        : "text-zinc-600 dark:text-zinc-400 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700/60"
                     }`}
                   >
                     {cat}
@@ -967,56 +1256,51 @@ export default function MarketplacePage() {
               })}
             </div>
 
-            {/* Quality Grade Info Ribbon */}
-            <div className="hidden lg:flex items-center gap-2 text-[11px] font-bold text-gray-500 dark:text-gray-400 shrink-0">
-              <span className="flex items-center gap-1 text-green-700 dark:text-green-400 font-semibold bg-green-50 dark:bg-green-950/60 px-2 py-0.5 rounded">
-                <Truck className="w-3 h-3" /> Live Farm Logistics
-              </span>
-              <span>Sonipat & Azadpur APMC Synced</span>
+            {/* APMC Mandi Live Status Badge */}
+            <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-semibold text-emerald-800 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-950/60 px-3 py-1 rounded-full shrink-0 border border-emerald-300/60 dark:border-emerald-800/40">
+              <Radio className="w-3 h-3 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+              <span>Sonipat & Azadpur APMC Live</span>
             </div>
           </div>
         </div>
       </header>
 
-      {/* 4. MAIN BODY FEED: OLX PRODUCE CARDS GRID */}
+      {/* 4. MAIN CATALOG BODY: PRODUCE CARDS GRID */}
       <main className="max-w-7xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
-        {/* Controls & Filter Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* Controls & Horizontal Filter Bar */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-4 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
           <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold text-[#002f34] dark:text-zinc-100 tracking-tight flex items-center gap-2">
+            <h1 className="text-xl md:text-2xl font-extrabold text-zinc-900 dark:text-zinc-100 tracking-tight font-sans flex items-center gap-2.5">
               Fresh recommendations
-              <Badge
-                variant="outline"
-                className="text-xs font-bold bg-teal-50 dark:bg-teal-950/50 text-teal-800 dark:text-teal-300 border-teal-200 dark:border-teal-800"
-              >
-                {filteredListings.length} farmer listings near you
-              </Badge>
+              <span className="text-xs font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2.5 py-1 rounded-full border border-zinc-200 dark:border-zinc-700">
+                {filteredListings.length} farmer listings
+              </span>
             </h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 font-sans">
               Direct from verified multi-seller farms within{" "}
-              <span className="font-semibold text-gray-700 dark:text-gray-300">
+              <span className="font-semibold text-zinc-800 dark:text-zinc-200">
                 {radius} km
               </span>{" "}
               radius
             </p>
           </div>
 
-          {/* Quick Filters */}
+          {/* Clean Horizontal Pill-Bar Filters */}
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Radius Quick Selector */}
-            <div className="flex items-center bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-md p-1 text-xs">
-              <span className="text-gray-500 font-medium px-2 flex items-center gap-1">
-                <MapPin className="w-3 h-3 text-teal-600" />
+            {/* Radius Quick Selector Pills */}
+            <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-full border border-zinc-200 dark:border-zinc-700 text-xs">
+              <span className="text-zinc-500 font-medium pl-2 pr-1 flex items-center gap-1">
+                <MapPin className="w-3 h-3 text-emerald-600" />
                 Radius:
               </span>
               {[15, 30, 50, 100].map((r) => (
                 <button
                   key={r}
                   onClick={() => handleRadiusChange(r)}
-                  className={`px-2 py-0.5 rounded font-bold transition cursor-pointer ${
+                  className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] transition cursor-pointer btn-interactive ${
                     radius === r
-                      ? "bg-[#002f34] text-white dark:bg-teal-600"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-zinc-800"
+                      ? "bg-[#0b3b20] text-amber-300 dark:bg-emerald-600 dark:text-white"
+                      : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                   }`}
                 >
                   {r}km
@@ -1024,73 +1308,48 @@ export default function MarketplacePage() {
               ))}
             </div>
 
-            {/* Quality Grade Filter */}
-            <select
-              value={selectedGrade}
-              onChange={(e) => setSelectedGrade(e.target.value)}
-              className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-md px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
-            >
-              <option value="All">All Grades</option>
-              <option value="Grade A">Grade A (Rating 4.5+ Export)</option>
-              <option value="Grade B">Grade B (Rating 3.5 - 4.4 Mandi)</option>
-              <option value="Grade C">Grade C (Processing &lt;3.5)</option>
-            </select>
+            {/* Quality Grade Filter Pills */}
+            <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-full border border-zinc-200 dark:border-zinc-700 text-xs">
+              {["All", "Grade A", "Grade B", "Grade C"].map((g) => (
+                <button
+                  key={g}
+                  onClick={() => setSelectedGrade(g)}
+                  className={`px-2.5 py-0.5 rounded-full font-bold text-[11px] transition cursor-pointer btn-interactive ${
+                    selectedGrade === g
+                      ? "bg-[#0b3b20] text-amber-300 dark:bg-emerald-600 dark:text-white"
+                      : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  }`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
 
-            {/* Minimum Rating Filter */}
-            <select
-              value={minRating}
-              onChange={(e) => setMinRating(Number(e.target.value))}
-              className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-md px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
-            >
-              <option value={0}>All Ratings</option>
-              <option value={4.5}>⭐ 4.5+ Stars (Grade A)</option>
-              <option value={4.0}>⭐ 4.0+ Stars</option>
-              <option value={3.5}>⭐ 3.5+ Stars</option>
-            </select>
-
-            {/* Sort Filter */}
+            {/* Sort Selector */}
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-md px-2.5 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-teal-500 cursor-pointer"
+              className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300 focus:outline-none cursor-pointer"
             >
-              <option value="featured">Sort: Featured First</option>
-              <option value="rating_desc">Sort: Highest Rated Farmers</option>
-              <option value="distance">Sort: Nearest Farm First</option>
-              <option value="price_asc">Price: Low to High</option>
-              <option value="price_desc">Price: High to Low</option>
-              <option value="stock_desc">Quantity: High to Low</option>
+              <option value="featured">Sort: Featured</option>
+              <option value="rating_desc">Sort: Highest Rated</option>
+              <option value="price_asc">Sort: Price Low to High</option>
+              <option value="price_desc">Sort: Price High to Low</option>
+              <option value="distance_asc">Sort: Nearest First</option>
             </select>
           </div>
         </div>
 
-        {/* Loading State */}
-        {loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 py-6">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
-              <div
-                key={n}
-                className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-md overflow-hidden animate-pulse flex flex-col h-[360px]"
-              >
-                <div className="h-44 bg-gray-200 dark:bg-zinc-800" />
-                <div className="p-3.5 space-y-2 flex-1">
-                  <div className="h-5 bg-gray-200 dark:bg-zinc-800 rounded w-1/2" />
-                  <div className="h-4 bg-gray-200 dark:bg-zinc-800 rounded w-3/4" />
-                  <div className="h-3 bg-gray-200 dark:bg-zinc-800 rounded w-full mt-4" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : filteredListings.length === 0 ? (
-          /* Empty State */
-          <div className="bg-white dark:bg-zinc-900 rounded-xl border border-gray-200 dark:border-zinc-800 p-12 text-center max-w-lg mx-auto shadow-xs my-10 space-y-4">
-            <div className="w-16 h-16 rounded-full bg-teal-50 dark:bg-teal-950 flex items-center justify-center text-2xl mx-auto">
+        {/* Empty Search Results Feedback */}
+        {filteredListings.length === 0 ? (
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-12 text-center space-y-4 max-w-lg mx-auto my-12">
+            <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto text-2xl">
               🔍
             </div>
-            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200">
+            <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-200 font-sans">
               No crop listings matched your criteria
             </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
               Try increasing your search radius to 50 km or clearing specific
               category/quality filters.
             </p>
@@ -1105,13 +1364,14 @@ export default function MarketplacePage() {
                   setSelectedGrade("All");
                   setMinRating(0);
                 }}
+                className="rounded-2xl"
               >
                 Reset all filters
               </Button>
               <Link href="/farmer/crops/new">
                 <Button
                   size="sm"
-                  className="bg-[#002f34] dark:bg-teal-600 hover:bg-[#003d44]"
+                  className="bg-[#0b3b20] dark:bg-emerald-600 hover:bg-emerald-800 text-white rounded-2xl"
                 >
                   Post a Crop Listing
                 </Button>
@@ -1119,202 +1379,109 @@ export default function MarketplacePage() {
             </div>
           </div>
         ) : (
-          /* 5. PRODUCT CARDS GRID (EXACT OLX AESTHETIC + QUICK ADD-TO-CART ACTION) */
+          /* 5. UNIFORM PRODUCT CARDS GRID */
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filteredListings.map((item, index) => {
-              const isGradeA = item.seller.grade === "Grade A";
-              const isGradeB = item.seller.grade === "Grade B";
+            {filteredListings.map((item) => {
               const otherSellersCount = item.allSellersInCrop.length - 1;
-              const isItemInCart = cart.some(
-                (c) =>
-                  c.sellerId === item.seller.sellerId &&
-                  c.cropId === item.cropId,
-              );
 
               return (
                 <div
                   key={`${item.cropId}-${item.seller.sellerId}`}
-                  className="contents"
+                  onClick={() => handleOpenDetailModal(item)}
+                  className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden hover:shadow-md transition-all duration-200 cursor-pointer flex flex-col justify-between group relative"
                 >
-                  {/* OLX CARD */}
-                  <div
-                    onClick={() => handleOpenDetailModal(item)}
-                    className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-md overflow-hidden hover:shadow-md transition-shadow duration-200 cursor-pointer flex flex-col justify-between group relative"
-                  >
-                    {/* Top Image Box */}
-                    <div className="relative aspect-[4/3] bg-gray-100 dark:bg-zinc-800 overflow-hidden">
-                      <img
-                        src={item.cropImage}
-                        alt={item.cropName}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        loading="lazy"
-                      />
+                  {/* Top Image Box */}
+                  <div className="relative aspect-[4/3] bg-zinc-100 dark:bg-zinc-800 overflow-hidden">
+                    <img
+                      src={item.cropImage}
+                      alt={item.cropName}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      loading="lazy"
+                    />
 
-                      {/* FEATURED Yellow Badge (Bottom Left of photo like OLX) */}
-                      {item.seller.rating >= 4.8 && (
-                        <div className="absolute bottom-2 left-2 bg-[#ffce32] text-black font-black text-[10px] px-2 py-0.5 rounded-xs uppercase tracking-wider shadow-sm flex items-center gap-1">
-                          <span>FEATURED</span>
-                        </div>
-                      )}
-
-                      {/* Multi-Seller count pill (Bottom Right of photo) */}
-                      {otherSellersCount > 0 && (
-                        <div className="absolute bottom-2 right-2 bg-[#002f34]/90 backdrop-blur-xs text-teal-300 font-bold text-[10px] px-2 py-0.5 rounded shadow flex items-center gap-1 border border-teal-700/50">
-                          <Layers className="w-3 h-3 text-teal-400" />
-                          <span>+{otherSellersCount} More Farmers</span>
-                        </div>
-                      )}
-
-                      {/* Grade Pill Linked Directly to Rating (Top Left) */}
-                      <div
-                        className={`absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm backdrop-blur-xs ${
-                          isGradeA
-                            ? "bg-[#002f34]/90 text-amber-300 border border-amber-400/40"
-                            : isGradeB
-                              ? "bg-teal-900/90 text-teal-200 border border-teal-400/40"
-                              : "bg-gray-800/90 text-gray-200 border border-gray-500/40"
-                        }`}
-                      >
-                        <span>{item.seller.grade}</span>
-                        <span>(⭐ {item.seller.rating})</span>
-                      </div>
-
-                      {/* QUICK ADD-TO-CART BUTTON (Replaces Heart Favorite Icon) */}
-                      <button
-                        onClick={(e) => addToCart(item, item.seller, 25, e)}
-                        className={`absolute top-2 right-2 px-2.5 py-1 rounded-full shadow-md text-xs font-black flex items-center gap-1 transition-all cursor-pointer ${
-                          isItemInCart
-                            ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                            : "bg-amber-400 hover:bg-amber-300 text-emerald-950 hover:scale-105 active:scale-95"
-                        }`}
-                        title="Add 25kg to Shopping Basket"
-                      >
-                        <ShoppingCart className="w-3.5 h-3.5" />
-                        <span>{isItemInCart ? "Added" : "+ Add"}</span>
-                      </button>
+                    {/* Single Combined Grade & Rating Pill in Top Corner */}
+                    <div className="absolute top-2.5 left-2.5 text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow-sm backdrop-blur-md bg-black/60 text-amber-300 border border-amber-400/30">
+                      <span>★ {item.seller.rating}</span>
+                      <span className="text-zinc-400">·</span>
+                      <span className="text-white">{item.seller.grade}</span>
                     </div>
 
-                    {/* Card Content (OLX Details Layout + Enriched Farmer Profile) */}
-                    <div className="p-3.5 flex flex-col flex-1 justify-between space-y-3">
-                      <div>
-                        {/* Price & Stock */}
-                        <div className="flex items-baseline justify-between">
-                          <h3 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">
-                            ₹ {item.seller.pricePerKg.toLocaleString("en-IN")}
-                            <span className="text-xs font-normal text-gray-500 dark:text-gray-400 ml-1">
-                              / kg
-                            </span>
-                          </h3>
-                          <span className="text-xs font-semibold text-teal-700 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/60 px-1.5 py-0.5 rounded">
-                            {item.seller.availableStockKg.toLocaleString(
-                              "en-IN",
-                            )}{" "}
-                            kg
-                          </span>
-                        </div>
-
-                        {/* Produce title */}
-                        <div className="mt-1">
-                          <p className="text-xs font-bold text-gray-900 dark:text-white line-clamp-1">
-                            {item.cropName}
-                          </p>
-                          <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-400 truncate">
-                            {item.seller.variety}
-                          </p>
-                        </div>
-
-                        {/* Enriched Farmer Profile Row */}
-                        <div className="mt-2.5 p-2 bg-gray-50 dark:bg-zinc-800/60 rounded border border-gray-100 dark:border-zinc-800 flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Avatar
-                              name={item.seller.farmerName}
-                              className="w-7 h-7 rounded-full border border-teal-500 text-[10px]"
-                            />
-                            <div className="truncate">
-                              <span className="text-xs font-bold text-gray-900 dark:text-white truncate block">
-                                {item.seller.farmerName}
-                              </span>
-                              <span className="text-[10px] text-gray-500 truncate block">
-                                {item.seller.totalSales}
-                              </span>
-                            </div>
-                          </div>
-                          <span className="text-xs font-extrabold text-amber-600 shrink-0 flex items-center gap-0.5">
-                            <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                            {item.seller.rating}
-                          </span>
-                        </div>
+                    {/* Multi-Seller count pill (Bottom Right of photo) */}
+                    {otherSellersCount > 0 && (
+                      <div className="absolute bottom-2.5 right-2.5 bg-black/70 backdrop-blur-md text-amber-300 font-bold text-[10px] px-2 py-0.5 rounded-full shadow flex items-center gap-1 border border-amber-400/30">
+                        <Layers className="w-3 h-3 text-amber-400" />
+                        <span>+{otherSellersCount} More Farmers</span>
                       </div>
-
-                      {/* Dual-Mode Action Buttons */}
-                      <div className="space-y-1.5 pt-1">
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={(e) =>
-                              handleOpenRetailBuy(item, item.seller, e)
-                            }
-                            className="flex-1 py-1.5 bg-[#002f34] hover:bg-[#003d44] dark:bg-teal-600 dark:hover:bg-teal-500 text-white font-bold text-xs rounded transition cursor-pointer"
-                          >
-                            🛒 Buy (kg)
-                          </button>
-                          <button
-                            onClick={(e) =>
-                              handleOpenBulkBuy(item, item.seller, e)
-                            }
-                            className="flex-1 py-1.5 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black text-xs rounded transition cursor-pointer border border-amber-500/30"
-                          >
-                            📦 Bulk (Tons)
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Footer: Location & Distance (OLX exact layout) */}
-                      <div className="pt-2 border-t border-gray-100 dark:border-zinc-800/80 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400 font-medium">
-                        <span
-                          className="uppercase truncate max-w-[65%]"
-                          title={item.seller.location}
-                        >
-                          {item.seller.location}
-                        </span>
-                        <span className="font-bold text-teal-700 dark:text-teal-400 shrink-0">
-                          {item.seller.distanceKm} km away
-                        </span>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
-                  {/* PROMOTIONAL "Want to see your harvest here?" CARD (OLX Exact Placement) */}
-                  {index === 3 && (
-                    <div className="bg-gradient-to-br from-[#002f34] to-[#0b3b20] text-white rounded-md p-5 flex flex-col justify-between shadow-md relative overflow-hidden">
-                      <div className="space-y-2 relative z-10">
-                        <span className="bg-amber-400 text-emerald-950 text-[10px] font-black uppercase px-2 py-0.5 rounded">
-                          🌾 FOR INDIAN FARMERS
+                  {/* Card Content */}
+                  <div className="p-4 flex flex-col flex-1 justify-between space-y-3">
+                    <div>
+                      {/* Price & Stock */}
+                      <div className="flex items-baseline justify-between">
+                        <h3 className="text-xl font-black text-zinc-900 dark:text-white tracking-tight">
+                          ₹ {item.seller.pricePerKg.toLocaleString("en-IN")}
+                          <span className="text-xs font-normal text-zinc-500 dark:text-zinc-400 ml-1">
+                            / kg
+                          </span>
+                        </h3>
+                        <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/50">
+                          {item.seller.availableStockKg.toLocaleString("en-IN")} kg
                         </span>
-                        <h4 className="text-lg font-extrabold leading-tight">
-                          Want to sell your harvest here?
-                        </h4>
-                        <p className="text-xs text-teal-100/90 leading-relaxed">
-                          Sell directly to consumers & bulk buyers in your
-                          district. Zero middleman cuts. Fast pickup dispatch.
+                      </div>
+
+                      {/* Produce Title & Variety */}
+                      <div className="mt-1">
+                        <p className="text-sm font-bold text-zinc-900 dark:text-white line-clamp-1">
+                          {item.cropName}
+                        </p>
+                        <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 truncate">
+                          {item.seller.variety}
                         </p>
                       </div>
 
-                      <div className="mt-6 relative z-10">
-                        <Link
-                          href="/farmer/crops/new"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button className="w-full py-2.5 px-4 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black rounded transition text-sm flex items-center justify-center gap-1 cursor-pointer shadow">
-                            <span>Start selling</span>
-                            <ArrowRight className="w-4 h-4" />
-                          </button>
-                        </Link>
+                      {/* Single-Line Sleek Farmer Profile Text Row */}
+                      <div className="mt-2.5 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-400">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <Avatar
+                            name={item.seller.farmerName}
+                            className="w-4 h-4 rounded-full text-[8px] bg-[#0b3b20] text-amber-300"
+                          />
+                          <span className="truncate font-semibold text-zinc-800 dark:text-zinc-200">
+                            {item.seller.farmerName}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-zinc-400 shrink-0 font-medium">
+                          {item.seller.totalSales}
+                        </span>
                       </div>
-
-                      {/* Decorative circle */}
-                      <div className="absolute -right-8 -bottom-8 w-32 h-32 bg-white/10 rounded-full blur-xs pointer-events-none" />
                     </div>
-                  )}
+
+                    {/* Single Primary Conversion CTA Button */}
+                    <div className="pt-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenDetailModal(item);
+                        }}
+                        className="w-full py-2.5 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black text-xs rounded-2xl transition cursor-pointer btn-interactive flex items-center justify-center gap-1.5 shadow-xs border border-amber-500/30"
+                      >
+                        <ShoppingCart className="w-4 h-4 text-emerald-950" />
+                        <span>Add to Cart / Order</span>
+                      </button>
+                    </div>
+
+                    {/* Footer: Location & Distance */}
+                    <div className="pt-2.5 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
+                      <span className="truncate max-w-[65%]" title={item.seller.location}>
+                        {item.seller.location}
+                      </span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400 shrink-0">
+                        {item.seller.distanceKm} km away
+                      </span>
+                    </div>
+                  </div>
                 </div>
               );
             })}
@@ -1523,7 +1690,7 @@ export default function MarketplacePage() {
             {/* Step Indicators */}
             <div className="px-5 pt-5">
               <div className="flex items-center gap-2">
-                {["Address", "Delivery", "Review"].map((label, index) => (
+                {["Address", "Delivery", "Payment", "Review"].map((label, index) => (
                   <div key={label} className="flex flex-1 items-center gap-2">
                     <span
                       className={`grid size-7 place-items-center rounded-full text-xs font-black transition ${checkoutStep >= index + 1 ? "bg-emerald-700 dark:bg-emerald-600 text-white" : "bg-stone-200 dark:bg-zinc-800 text-stone-500 dark:text-zinc-400"}`}
@@ -1537,7 +1704,7 @@ export default function MarketplacePage() {
                     <span className="hidden text-xs font-bold text-emerald-900 dark:text-zinc-200 sm:inline">
                       {label}
                     </span>
-                    {index < 2 && (
+                    {index < 3 && (
                       <span className="h-px flex-1 bg-stone-200 dark:bg-zinc-800" />
                     )}
                   </div>
@@ -1605,7 +1772,7 @@ export default function MarketplacePage() {
                   <div className="flex justify-end pt-2">
                     <Button
                       onClick={continueFromAddress}
-                      className="bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold"
+                      className="bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold cursor-pointer"
                     >
                       Continue <ChevronRight className="size-4" />
                     </Button>
@@ -1712,22 +1879,251 @@ export default function MarketplacePage() {
                     <Button
                       variant="outline"
                       onClick={() => setCheckoutStep(1)}
-                      className="border-stone-300 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      className="border-stone-300 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 cursor-pointer"
                     >
                       Back
                     </Button>
                     <Button
                       onClick={() => setCheckoutStep(3)}
-                      className="bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold"
+                      className="bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold cursor-pointer"
                     >
-                      Review order
+                      Select Payment <ChevronRight className="size-4" />
                     </Button>
                   </div>
                 </div>
               )}
 
-              {/* Step 3: Review */}
+              {/* Step 3: Payment Method */}
               {checkoutStep === 3 && (
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-extrabold text-emerald-950 dark:text-zinc-100">
+                      Select payment method
+                    </h3>
+                    <p className="text-xs text-stone-500 dark:text-zinc-400">
+                      Choose direct instant escrow or cash on delivery.
+                    </p>
+                  </div>
+
+                  {paymentError && (
+                    <p className="rounded-lg bg-red-50 dark:bg-red-950/50 p-3 text-xs font-semibold text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                      {paymentError}
+                    </p>
+                  )}
+
+                  {/* Payment Options Grid */}
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod("upi");
+                        setPaymentError("");
+                      }}
+                      className={`p-3 rounded-2xl border-2 text-left transition cursor-pointer flex flex-col justify-between gap-2 ${paymentMethod === "upi" ? "border-emerald-700 dark:border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 font-bold" : "border-stone-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800"}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <QrCode className="w-5 h-5 text-emerald-700 dark:text-teal-400" />
+                        {paymentMethod === "upi" && (
+                          <span className="w-4 h-4 rounded-full bg-emerald-700 text-white grid place-items-center">
+                            <Check className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-emerald-950 dark:text-zinc-100">Instant UPI</p>
+                        <p className="text-[10px] text-stone-500 dark:text-zinc-400">GPay / PhonePe</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod("card");
+                        setPaymentError("");
+                      }}
+                      className={`p-3 rounded-2xl border-2 text-left transition cursor-pointer flex flex-col justify-between gap-2 ${paymentMethod === "card" ? "border-emerald-700 dark:border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 font-bold" : "border-stone-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800"}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <CreditCard className="w-5 h-5 text-emerald-700 dark:text-teal-400" />
+                        {paymentMethod === "card" && (
+                          <span className="w-4 h-4 rounded-full bg-emerald-700 text-white grid place-items-center">
+                            <Check className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-emerald-950 dark:text-zinc-100">Cards</p>
+                        <p className="text-[10px] text-stone-500 dark:text-zinc-400">Visa / Mastercard</p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod("cod");
+                        setPaymentError("");
+                      }}
+                      className={`p-3 rounded-2xl border-2 text-left transition cursor-pointer flex flex-col justify-between gap-2 ${paymentMethod === "cod" ? "border-emerald-700 dark:border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 font-bold" : "border-stone-200 dark:border-zinc-800 bg-white dark:bg-zinc-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800"}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <Truck className="w-5 h-5 text-emerald-700 dark:text-teal-400" />
+                        {paymentMethod === "cod" && (
+                          <span className="w-4 h-4 rounded-full bg-emerald-700 text-white grid place-items-center">
+                            <Check className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-emerald-950 dark:text-zinc-100">Pay on Delivery</p>
+                        <p className="text-[10px] text-stone-500 dark:text-zinc-400">Cash / QR</p>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Payment Input Forms */}
+                  {paymentMethod === "upi" && (
+                    <div className="p-4 rounded-2xl bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-emerald-950 dark:text-zinc-100">
+                          Instant UPI & Escrow
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowQrCode(!showQrCode)}
+                          className="text-xs text-emerald-700 dark:text-teal-400 font-bold hover:underline cursor-pointer"
+                        >
+                          {showQrCode ? "Enter UPI VPA" : "Show Instant QR Code"}
+                        </button>
+                      </div>
+
+                      {showQrCode ? (
+                        <div className="flex flex-col items-center justify-center p-4 bg-emerald-50/50 dark:bg-zinc-900 rounded-xl border border-emerald-200 dark:border-zinc-700 space-y-2">
+                          <div className="p-3 bg-white rounded-xl shadow-md border border-gray-200">
+                            <QrCode className="w-24 h-24 text-emerald-950" />
+                          </div>
+                          <p className="text-[11px] font-bold text-emerald-900 dark:text-zinc-300">
+                            Scan using GPay, PhonePe, Paytm or any UPI App
+                          </p>
+                          <span className="text-[10px] text-gray-500 bg-white dark:bg-zinc-800 px-2 py-0.5 rounded-full border">
+                            Amount: ₹{(cartTotalPrice + deliveryFee).toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <label className="block">
+                            <span className="text-xs font-bold text-stone-700 dark:text-zinc-300">
+                              UPI VPA Handle *
+                            </span>
+                            <Input
+                              value={upiId}
+                              onChange={(e) => setUpiId(e.target.value)}
+                              placeholder="e.g. buyer@okaxis"
+                              className="border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 mt-1"
+                            />
+                          </label>
+                          <div className="flex items-center gap-1.5 pt-1">
+                            <span className="text-[10px] text-gray-500 font-semibold">Fast Select:</span>
+                            {["GPay", "PhonePe", "Paytm", "BHIM"].map((app) => (
+                              <button
+                                key={app}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedUpiApp(app);
+                                  setUpiId(`ramesh.kumar@${app.toLowerCase()}`);
+                                }}
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition cursor-pointer ${selectedUpiApp === app ? "bg-emerald-700 text-white border-emerald-700" : "bg-stone-100 dark:bg-zinc-700 text-stone-700 dark:text-zinc-300 border-stone-300 dark:border-zinc-600"}`}
+                              >
+                                {app}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {paymentMethod === "card" && (
+                    <div className="p-4 rounded-2xl bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 space-y-3">
+                      <label className="block">
+                        <span className="text-xs font-bold text-stone-700 dark:text-zinc-300">
+                          Cardholder Name *
+                        </span>
+                        <Input
+                          value={cardDetails.name}
+                          onChange={(e) => setCardDetails({ ...cardDetails, name: e.target.value })}
+                          className="border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 mt-1"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-bold text-stone-700 dark:text-zinc-300">
+                          Card Number *
+                        </span>
+                        <Input
+                          value={cardDetails.number}
+                          onChange={(e) => setCardDetails({ ...cardDetails, number: e.target.value })}
+                          className="border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 mt-1"
+                        />
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="block">
+                          <span className="text-xs font-bold text-stone-700 dark:text-zinc-300">
+                            Expiry Date *
+                          </span>
+                          <Input
+                            value={cardDetails.expiry}
+                            onChange={(e) => setCardDetails({ ...cardDetails, expiry: e.target.value })}
+                            placeholder="MM/YY"
+                            className="border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 mt-1"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-bold text-stone-700 dark:text-zinc-300">
+                            CVV *
+                          </span>
+                          <Input
+                            type="password"
+                            maxLength={4}
+                            value={cardDetails.cvv}
+                            onChange={(e) => setCardDetails({ ...cardDetails, cvv: e.target.value })}
+                            className="border-stone-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 mt-1"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {paymentMethod === "cod" && (
+                    <div className="p-4 rounded-2xl bg-amber-50 dark:bg-zinc-800/90 border border-amber-200 dark:border-zinc-700 space-y-2 text-xs">
+                      <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300">
+                        <Truck className="w-4 h-4 text-amber-700" />
+                        <span>Pay cash upon farm produce verification</span>
+                      </div>
+                      <p className="text-stone-600 dark:text-zinc-300 leading-relaxed">
+                        Pay cash or scan rider&apos;s UPI QR code at your doorstep after inspecting crate weight and crop freshness. Note: COD orders incur a nominal ₹20 cash handling charge.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between pt-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setCheckoutStep(2)}
+                      className="border-stone-300 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 cursor-pointer"
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      onClick={continueFromPayment}
+                      className="bg-emerald-700 hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500 text-white font-bold cursor-pointer"
+                    >
+                      Review Order <ChevronRight className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 4: Review */}
+              {checkoutStep === 4 && (
                 <div className="space-y-4">
                   <div>
                     <h3 className="font-extrabold text-emerald-950 dark:text-zinc-100">
@@ -1752,6 +2148,22 @@ export default function MarketplacePage() {
                         ? "Self pickup (free)"
                         : `${chosenPartner?.name} · ${chosenRider?.name} (★ ${chosenRider?.rating}) · ${chosenPartner?.eta}`}
                     </p>
+                    <div className="pt-1.5 flex items-center gap-1.5">
+                      <span className="text-xs text-stone-500 dark:text-zinc-400">Payment:</span>
+                      {paymentMethod === "cod" ? (
+                        <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded text-[10px] font-black">
+                          💵 Pay cash on delivery (+₹20 COD fee)
+                        </span>
+                      ) : paymentMethod === "card" ? (
+                        <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-700" /> Credit / Debit Card
+                        </span>
+                      ) : (
+                        <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1">
+                          <Check className="w-3 h-3 text-emerald-700" /> Instant UPI Escrow ({selectedUpiApp})
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="rounded-xl bg-[#0b3b20] dark:bg-zinc-950 border border-emerald-800 dark:border-zinc-800 p-4 text-white space-y-1">
@@ -1771,11 +2183,17 @@ export default function MarketplacePage() {
                         <span className="font-semibold">₹{deliveryFee}</span>
                       </div>
                     )}
+                    {paymentMethod === "cod" && (
+                      <div className="flex justify-between text-sm text-amber-300">
+                        <span>COD handling charge</span>
+                        <span className="font-semibold">₹20</span>
+                      </div>
+                    )}
                     <div className="mt-2 flex justify-between text-lg font-black border-t border-emerald-800 dark:border-zinc-800 pt-2">
                       <span>Total</span>
                       <span className="text-amber-300">
                         ₹
-                        {(cartTotalPrice + deliveryFee).toLocaleString("en-IN")}
+                        {(cartTotalPrice + deliveryFee + (paymentMethod === "cod" ? 20 : 0)).toLocaleString("en-IN")}
                       </span>
                     </div>
                   </div>
@@ -1783,15 +2201,15 @@ export default function MarketplacePage() {
                   <div className="flex justify-between pt-1">
                     <Button
                       variant="outline"
-                      onClick={() => setCheckoutStep(2)}
-                      className="border-stone-300 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                      onClick={() => setCheckoutStep(3)}
+                      className="border-stone-300 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 cursor-pointer"
                     >
                       Back
                     </Button>
                     <Button
                       onClick={handleProceedCartCheckout}
                       disabled={isCheckingOutCart}
-                      className="bg-[#ffd814] hover:bg-[#f7ca00] font-black text-emerald-950 shadow-md"
+                      className="bg-[#ffd814] hover:bg-[#f7ca00] font-black text-emerald-950 shadow-md cursor-pointer"
                     >
                       {isCheckingOutCart ? "Placing..." : "Place order"}
                     </Button>
@@ -1912,33 +2330,12 @@ export default function MarketplacePage() {
         </div>
       )}
 
-      {/* 7. FLOATING APP DOWNLOAD BANNER (Matches OLX QR Widget) */}
-      {showAppBanner && (
-        <div className="fixed bottom-4 right-4 z-40 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-lg shadow-xl p-3.5 max-w-xs flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5">
-          <div className="w-12 h-12 bg-gray-100 dark:bg-zinc-800 rounded flex items-center justify-center p-1.5 shrink-0">
-            <QrCode className="w-full h-full text-[#002f34] dark:text-teal-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-gray-900 dark:text-white leading-tight">
-              Download FarmFresh Krishi App
-            </p>
-            <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-              Live Mandi price alerts & direct farmer contact
-            </p>
-          </div>
-          <button
-            onClick={() => setShowAppBanner(false)}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 -mt-5 -mr-1 cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+
 
       {/* 8. OLX DETAIL MODAL + MULTI-SELLER COMPARISON VIEW */}
       {selectedListing && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl max-w-4xl w-full overflow-hidden shadow-2xl animate-in zoom-in-95 max-h-[92vh] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-glass-backdrop flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl animate-in zoom-in-95 max-h-[92vh] flex flex-col">
             {/* Modal Header */}
             <div className="p-4 border-b border-gray-100 dark:border-zinc-800 flex justify-between items-center bg-gray-50/70 dark:bg-zinc-800/80">
               <div className="flex items-center gap-2">
@@ -2328,9 +2725,45 @@ export default function MarketplacePage() {
                       <span>- ₹{discountAmount.toLocaleString("en-IN")}</span>
                     </div>
                   )}
+                  {paymentMethod === "cod" && (
+                    <div className="flex justify-between text-amber-700 dark:text-amber-400 font-bold">
+                      <span>COD Handling Fee:</span>
+                      <span>+ ₹20</span>
+                    </div>
+                  )}
                   <div className="flex justify-between border-t border-gray-200 dark:border-zinc-700 pt-1.5 font-extrabold text-sm text-[#002f34] dark:text-teal-300">
                     <span>Total Direct Payable:</span>
-                    <span>₹{finalPayable.toLocaleString("en-IN")}</span>
+                    <span>₹{(finalPayable + (paymentMethod === "cod" ? 20 : 0)).toLocaleString("en-IN")}</span>
+                  </div>
+                </div>
+
+                {/* Compact Payment Selector for Direct Buy */}
+                <div className="space-y-1.5">
+                  <span className="text-xs font-bold text-gray-800 dark:text-zinc-200">
+                    Select Payment Method
+                  </span>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("upi")}
+                      className={`p-2 rounded-lg border text-center transition cursor-pointer text-xs font-bold ${paymentMethod === "upi" ? "bg-teal-50 dark:bg-zinc-800 border-teal-600 text-teal-900 dark:text-teal-300" : "border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 text-gray-700 dark:text-zinc-300 hover:bg-gray-100"}`}
+                    >
+                      📱 UPI Escrow
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("card")}
+                      className={`p-2 rounded-lg border text-center transition cursor-pointer text-xs font-bold ${paymentMethod === "card" ? "bg-teal-50 dark:bg-zinc-800 border-teal-600 text-teal-900 dark:text-teal-300" : "border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 text-gray-700 dark:text-zinc-300 hover:bg-gray-100"}`}
+                    >
+                      💳 Card
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("cod")}
+                      className={`p-2 rounded-lg border text-center transition cursor-pointer text-xs font-bold ${paymentMethod === "cod" ? "bg-teal-50 dark:bg-zinc-800 border-teal-600 text-teal-900 dark:text-teal-300" : "border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800/60 text-gray-700 dark:text-zinc-300 hover:bg-gray-100"}`}
+                    >
+                      💵 COD (+₹20)
+                    </button>
                   </div>
                 </div>
 
@@ -2338,7 +2771,7 @@ export default function MarketplacePage() {
                 <Button
                   onClick={handleConfirmOrder}
                   disabled={isOrdering || purchaseQuantity <= 0}
-                  className="w-full bg-[#002f34] hover:bg-[#003d44] dark:bg-teal-600 dark:hover:bg-teal-500 text-white py-3 font-bold text-sm"
+                  className="w-full bg-[#002f34] hover:bg-[#003d44] dark:bg-teal-600 dark:hover:bg-teal-500 text-white py-3 font-bold text-sm cursor-pointer"
                 >
                   {isOrdering
                     ? "Placing Order..."
@@ -2357,8 +2790,24 @@ export default function MarketplacePage() {
                     <span>Quantity:</span>
                     <span>{orderSuccess.quantityKg.toLocaleString()} kg</span>
                   </div>
-                  <div className="flex justify-between text-green-800 dark:text-green-300 font-bold">
-                    <span>Total:</span>
+                  <div className="flex justify-between items-center text-green-800 dark:text-green-300">
+                    <span>Payment Mode:</span>
+                    {orderSuccess.paymentMethod === "cod" ? (
+                      <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded text-[10px] font-black">
+                        💵 Payable via COD on Delivery
+                      </span>
+                    ) : orderSuccess.paymentMethod === "card" ? (
+                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-700" /> Paid via Credit/Debit Card
+                      </span>
+                    ) : (
+                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded text-[10px] font-black flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-700" /> Paid via Instant UPI Escrow
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex justify-between text-green-800 dark:text-green-300 font-bold border-t border-green-200 dark:border-green-900 pt-1.5">
+                    <span>Total Paid/Payable:</span>
                     <span>
                       ₹{orderSuccess.totalAmount.toLocaleString("en-IN")}
                     </span>
@@ -2426,6 +2875,429 @@ export default function MarketplacePage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* 9. MY ORDERS MODAL */}
+      {isOrdersModalOpen && (
+        <div className="fixed inset-0 z-50 bg-glass-backdrop flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-3xl max-w-3xl w-full overflow-hidden shadow-2xl animate-in zoom-in-95 max-h-[92vh] flex flex-col">
+            {/* Modal Header Ribbon */}
+            <div className="bg-[#002f34] text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-400 text-emerald-950 flex items-center justify-center font-black">
+                  <Package className="w-5 h-5 stroke-[2.5]" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black font-serif text-white">
+                    My FarmFresh Orders
+                  </h3>
+                  <p className="text-xs text-amber-300 font-medium">
+                    Live dispatch status, 5-step milestone tracking & order history
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsOrdersModalOpen(false)}
+                className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Tab Controls */}
+            <div className="flex border-b border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-950/60 px-5 pt-3">
+              <button
+                onClick={() => setOrdersTab("active")}
+                className={`pb-3 px-4 text-xs font-black transition cursor-pointer border-b-2 flex items-center gap-2 ${
+                  ordersTab === "active"
+                    ? "border-[#002f34] dark:border-teal-400 text-[#002f34] dark:text-teal-400"
+                    : "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400"
+                }`}
+              >
+                <span>Active Orders</span>
+                <span className="bg-amber-400 text-emerald-950 text-[10px] font-black px-2 py-0.5 rounded-full">
+                  {activeOrdersCount}
+                </span>
+              </button>
+              <button
+                onClick={() => setOrdersTab("past")}
+                className={`pb-3 px-4 text-xs font-black transition cursor-pointer border-b-2 flex items-center gap-2 ${
+                  ordersTab === "past"
+                    ? "border-[#002f34] dark:border-teal-400 text-[#002f34] dark:text-teal-400"
+                    : "border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400"
+                }`}
+              >
+                <span>Past & Delivered</span>
+                <span className="bg-gray-200 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 text-[10px] font-black px-2 py-0.5 rounded-full">
+                  {ordersHistory.length - activeOrdersCount}
+                </span>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1 bg-[#f7f8f9] dark:bg-zinc-900">
+              {ordersTab === "active" ? (
+                ordersHistory.filter((o) => o.status !== "Delivered" && o.status !== "Cancelled").length === 0 ? (
+                  <div className="py-16 text-center space-y-3">
+                    <div className="w-16 h-16 rounded-full bg-emerald-50 dark:bg-zinc-800 text-emerald-700 flex items-center justify-center text-3xl mx-auto">
+                      📦
+                    </div>
+                    <h4 className="font-bold text-base text-gray-800 dark:text-gray-200">
+                      No Active Orders Right Now
+                    </h4>
+                    <p className="text-xs text-gray-500 max-w-xs mx-auto">
+                      Direct farm purchases or marketplace cart orders will show live 5-step milestone tracking here.
+                    </p>
+                  </div>
+                ) : (
+                  ordersHistory
+                    .filter((o) => o.status !== "Delivered" && o.status !== "Cancelled")
+                    .map((order) => {
+                      const stepIndex =
+                        order.status === "Confirmed"
+                          ? 1
+                          : order.status === "In Transit"
+                          ? 3
+                          : order.status === "Out for Delivery"
+                          ? 4
+                          : 5;
+
+                      return (
+                        <div
+                          key={order.orderId}
+                          className="bg-white dark:bg-zinc-800 border-2 border-emerald-800/30 dark:border-zinc-700 rounded-2xl p-4 shadow-md space-y-4"
+                        >
+                          {/* Card Header */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 dark:border-zinc-700 pb-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-sm text-[#002f34] dark:text-white font-mono">
+                                  {order.orderId}
+                                </span>
+                                <span className="text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-md">
+                                  {order.status}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-gray-500 block">
+                                Placed on {order.placedAt.toLocaleDateString()} at {order.placedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+
+                            <div className="text-right">
+                              <span className="text-xs font-black text-emerald-900 dark:text-amber-300 block">
+                                ₹{order.totalPrice.toLocaleString("en-IN")}
+                              </span>
+                              <div className="mt-0.5">
+                                {order.paymentMethod === "cod" ? (
+                                  <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded">
+                                    💵 COD Payable on Delivery
+                                  </span>
+                                ) : (
+                                  <span className="bg-emerald-100 text-emerald-900 text-[10px] font-bold px-2 py-0.5 rounded">
+                                    ✓ Paid via {order.paymentMethod.toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* 5-Step Milestone Timeline */}
+                          <div className="space-y-1 bg-stone-50 dark:bg-zinc-900/60 p-3 rounded-xl border border-stone-200 dark:border-zinc-700">
+                            <p className="text-[10px] font-black uppercase text-gray-500 tracking-wider mb-2">
+                              Logistics Dispatch Milestone Timeline
+                            </p>
+                            <div className="grid grid-cols-5 gap-1 text-center text-[10px] font-bold text-gray-700 dark:text-gray-300">
+                              {[
+                                "1. Placed",
+                                "2. Picked Up",
+                                "3. In Transit",
+                                "4. Out for Delivery",
+                                "5. Delivered",
+                              ].map((lbl, idx) => (
+                                <div key={lbl} className="space-y-1">
+                                  <div
+                                    className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-bold ${
+                                      stepIndex >= idx + 1
+                                        ? "bg-emerald-700 text-white"
+                                        : "bg-stone-200 dark:bg-zinc-800 text-stone-500"
+                                    }`}
+                                  >
+                                    {stepIndex > idx + 1 ? (
+                                      <Check className="size-3.5" />
+                                    ) : (
+                                      idx + 1
+                                    )}
+                                  </div>
+                                  <p className="leading-tight text-[9px]">{lbl}</p>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="h-1.5 bg-stone-200 dark:bg-zinc-800 rounded-full mt-2 overflow-hidden">
+                              <div
+                                className="h-full bg-emerald-600 transition-all duration-500"
+                                style={{ width: `${(stepIndex / 5) * 100}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Items List */}
+                          <div className="space-y-2">
+                            {order.items.map((item) => (
+                              <div
+                                key={item.cropName}
+                                className="flex items-center justify-between text-xs p-2 rounded-xl bg-gray-50 dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800"
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <img
+                                    src={item.cropImage}
+                                    alt={item.cropName}
+                                    className="w-10 h-10 rounded-lg object-cover border border-amber-300"
+                                  />
+                                  <div>
+                                    <span className="font-bold text-gray-900 dark:text-white block">
+                                      {item.cropName}
+                                    </span>
+                                    <span className="text-[10px] text-gray-500">
+                                      👨‍🌾 Farmer: {item.sellerName}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="text-right font-bold">
+                                  <span>{item.quantityKg} kg</span>
+                                  <span className="text-[10px] text-gray-500 block">
+                                    ₹{item.pricePerKg}/kg
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Live Dispatch Snippet with OSM Map & Rider */}
+                          <div className="p-3 bg-teal-50/60 dark:bg-zinc-900 border border-teal-200 dark:border-zinc-700 rounded-xl space-y-2 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-teal-950 dark:text-teal-300 flex items-center gap-1.5">
+                                <Truck className="w-4 h-4 text-teal-600" />
+                                {order.deliveryPartner}
+                              </span>
+                              <span className="text-[11px] font-extrabold text-amber-700 dark:text-amber-400">
+                                ⏱️ {order.eta}
+                              </span>
+                            </div>
+
+                            <iframe
+                              title={`Live dispatch map for order ${order.orderId}`}
+                              src="https://www.openstreetmap.org/export/embed.html?bbox=77.12%2C28.58%2C77.28%2C28.68&amp;layer=mapnik&amp;marker=28.6139%2C77.209"
+                              className="h-28 w-full border border-teal-200 dark:border-zinc-700 rounded-lg opacity-90"
+                              loading="lazy"
+                            />
+
+                            {order.riderInfo && (
+                              <div className="flex items-center justify-between pt-1">
+                                <div>
+                                  <span className="font-bold text-gray-900 dark:text-white block text-[11px]">
+                                    Rider: {order.riderInfo.name} (★ {order.riderInfo.rating})
+                                  </span>
+                                  <span className="text-[10px] text-gray-500 block">
+                                    {order.riderInfo.vehicle}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={`tel:${order.riderInfo.phone}`}
+                                    className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-lg text-[10px] flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Phone className="w-3 h-3" />
+                                    <span>Call Rider</span>
+                                  </a>
+                                  <button
+                                    onClick={() => handleCancelOrder(order.orderId)}
+                                    className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-800 font-bold rounded-lg text-[10px] cursor-pointer"
+                                  >
+                                    Cancel Order
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                )
+              ) : (
+                /* Past Orders Tab */
+                ordersHistory.filter((o) => o.status === "Delivered" || o.status === "Cancelled").length === 0 ? (
+                  <div className="py-16 text-center space-y-3">
+                    <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 flex items-center justify-center text-3xl mx-auto">
+                      📜
+                    </div>
+                    <h4 className="font-bold text-base text-gray-800 dark:text-gray-200">
+                      No Past Order History
+                    </h4>
+                  </div>
+                ) : (
+                  ordersHistory
+                    .filter((o) => o.status === "Delivered" || o.status === "Cancelled")
+                    .map((order) => (
+                      <div
+                        key={order.orderId}
+                        className="bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-2xl p-4 shadow-sm space-y-3"
+                      >
+                        <div className="flex justify-between items-start border-b border-gray-100 dark:border-zinc-700 pb-2.5">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-black text-sm text-gray-900 dark:text-white font-mono">
+                                {order.orderId}
+                              </span>
+                              {order.status === "Delivered" ? (
+                                <span className="bg-emerald-100 text-emerald-900 text-[10px] font-black px-2 py-0.5 rounded flex items-center gap-1">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-700" /> Delivered
+                                </span>
+                              ) : (
+                                <span className="bg-red-100 text-red-800 text-[10px] font-black px-2 py-0.5 rounded">
+                                  Cancelled
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-gray-500 block mt-0.5">
+                              {order.eta}
+                            </span>
+                          </div>
+
+                          <div className="text-right">
+                            <span className="text-xs font-black text-gray-900 dark:text-white block">
+                              ₹{order.totalPrice.toLocaleString("en-IN")}
+                            </span>
+                            <span className="text-[10px] text-gray-500 block">
+                              {order.totalKg} kg total
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Items */}
+                        <div className="space-y-2">
+                          {order.items.map((item) => (
+                            <div
+                              key={item.cropName}
+                              className="flex items-center justify-between text-xs p-2 rounded-xl bg-gray-50 dark:bg-zinc-900"
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <img
+                                  src={item.cropImage}
+                                  alt={item.cropName}
+                                  className="w-10 h-10 rounded-lg object-cover border border-amber-300"
+                                />
+                                <div>
+                                  <span className="font-bold text-gray-900 dark:text-white block">
+                                    {item.cropName}
+                                  </span>
+                                  <span className="text-[10px] text-gray-500">
+                                    👨‍🌾 Farmer: {item.sellerName}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right font-bold">
+                                <span>{item.quantityKg} kg</span>
+                                {order.status === "Delivered" && (
+                                  <button
+                                    onClick={() => handleOpenRating(item.cropName, item.sellerName)}
+                                    className="text-[10px] text-amber-700 dark:text-amber-400 underline block font-bold cursor-pointer mt-0.5"
+                                  >
+                                    ⭐ Rate Produce
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Actions: Buy Again */}
+                        <div className="pt-2 border-t border-gray-100 dark:border-zinc-700 flex justify-end">
+                          <Button
+                            size="sm"
+                            onClick={() => handleBuyAgain(order)}
+                            className="bg-[#002f34] hover:bg-[#003d44] dark:bg-teal-600 text-white font-bold text-xs cursor-pointer flex items-center gap-1.5"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Buy Again</span>
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RATE PRODUCE POPUP MODAL */}
+      {ratingModalItem && (
+        <div className="fixed inset-0 z-[70] bg-glass-backdrop flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-4 animate-in zoom-in-95 text-center">
+            <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 flex items-center justify-center text-2xl mx-auto shadow-xs">
+              ⭐
+            </div>
+            <div>
+              <h3 className="font-extrabold text-base text-gray-900 dark:text-white">
+                Rate Produce Quality
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                How fresh were <strong>{ratingModalItem.cropName}</strong> from{" "}
+                <strong>{ratingModalItem.sellerName}</strong>?
+              </p>
+            </div>
+
+            {/* 5-Star Selector */}
+            <div className="flex justify-center gap-2">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  onClick={() => setRatingStars(star)}
+                  className="p-1 cursor-pointer hover:scale-110 transition"
+                >
+                  <Star
+                    className={`w-7 h-7 ${
+                      star <= ratingStars
+                        ? "fill-amber-400 text-amber-400"
+                        : "text-gray-300 dark:text-zinc-700"
+                    }`}
+                  />
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => setRatingModalItem(null)}
+                className="flex-1 text-xs border-gray-300 dark:border-zinc-700"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmitRating}
+                className="flex-1 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-black text-xs cursor-pointer"
+              >
+                Submit Rating
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST NOTIFICATIONS */}
+      {reAddToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#002f34] text-amber-300 text-xs font-black px-4 py-3 rounded-full shadow-2xl border border-amber-400 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-5">
+          <RotateCcw className="w-4 h-4 text-amber-400" />
+          <span>{reAddToast}</span>
+        </div>
+      )}
+
+      {ratingSuccessToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-emerald-900 text-white text-xs font-black px-4 py-3 rounded-full shadow-2xl border border-emerald-400 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-5">
+          <Star className="w-4 h-4 text-amber-300 fill-amber-300" />
+          <span>{ratingSuccessToast}</span>
         </div>
       )}
 

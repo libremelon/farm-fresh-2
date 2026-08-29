@@ -128,3 +128,12 @@
     @apply font-sans;
   }
 }
+
+@layer utilities {
+  .bg-glass-backdrop {
+    @apply bg-black/60 backdrop-blur-md;
+  }
+  .btn-interactive {
+    @apply active:scale-[0.98] transition-all duration-200;
+  }
+}
